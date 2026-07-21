@@ -36,7 +36,7 @@ const fmtMsgTime = (ts: number) => new Date(ts).toLocaleTimeString("zh-CN", { ho
 const fmtPct = (value: number | null | undefined) => typeof value === "number" ? `${(value * 100).toFixed(1)}%` : "-";
 type PrivateSummaryDir = "大" | "小" | "单" | "双" | "大单" | "大双" | "小单" | "小双";
 const PRIVATE_SUMMARY_DIRS: PrivateSummaryDir[] = ["大", "小", "单", "双", "大单", "大双", "小单", "小双"];
-const ADMIN_BET_LIST_LIMIT = 1000;
+const ADMIN_BET_LIST_LIMIT = 5000;
 
 export default function AdminPage() {
   const { user, logout } = useAuth();
