@@ -60,7 +60,7 @@ let privateCurrentTerm: number | null = null;
 let privateLastBetAt = 0;
 const privateSseClients = new Set<Response>();
 const privateGroupTitleCache = new Map<string, string>();
-const PRIVATE_MAX_BETS = 2000;
+const PRIVATE_MAX_BETS = 5000;
 const PRIVATE_WINDOW_MS = 10 * 60 * 1000;
 const PRIVATE_MONITOR_SINGLE_BET_CAP = 300;
 
