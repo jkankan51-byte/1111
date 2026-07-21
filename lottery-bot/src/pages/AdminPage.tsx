@@ -2234,121 +2234,103 @@ export default function AdminPage() {
 
             {/* 方向统计 */}
             {hashBets.length > 0 && (() => {
-              type Dir = "大" | "小" | "单" | "双";
-              type Cur = "kk" | "usdt" | "cny";
-              const isNumDir = (s: string) => /^\d+$/.test(s);
-              const zero = () => ({ kk: 0, usdt: 0, cny: 0 });
-              const dt: Record<string, { kk: number; usdt: number; cny: number }> = {
-                "大": zero(), "小": zero(), "单": zero(), "双": zero(), "其他": zero(),
-              };
+              const isNum = (s: string) => /^\d+$/.test(s);
+              const z = () => ({ kk: 0, usdt: 0, cny: 0 });
+              const allDirs = ["大单", "大双", "大", "小单", "小双", "小", "单", "双", "其他"] as const;
+              const dirm: Record<string, { kk: number; usdt: number; cny: number }> = Object.fromEntries(allDirs.map(d => [d, z()]));
               for (const b of hashBets) {
-                const d = b.direction.trim();
-                if (d === "大" || d === "小" || d === "单" || d === "双") {
-                  dt[d][b.currency] += b.amount;
-                } else if (isNumDir(d)) {
-                  dt["其他"][b.currency] += b.amount;
+                const d = b.direction;
+                if (d === "大单" || d === "大双" || d === "大" || d === "小单" || d === "小双" || d === "小" || d === "单" || d === "双") {
+                  dirm[d][b.currency] += b.amount;
+                } else if (isNum(d)) {
+                  dirm["其他"][b.currency] += b.amount;
                 }
               }
-              const sumDir = (d: string) => dt[d].kk + dt[d].usdt + dt[d].cny;
-              const grandTotal = sumDir("大") + sumDir("小") + sumDir("单") + sumDir("双") + sumDir("其他");
-              const pct = (n: number) => grandTotal > 0 ? Math.round(n / grandTotal * 100) : 0;
+              const sumKK = (ds: string[]) => ds.reduce((s, d) => s + dirm[d].kk, 0);
+              const sumUSDT = (ds: string[]) => ds.reduce((s, d) => s + dirm[d].usdt, 0);
+              const sumCNY = (ds: string[]) => ds.reduce((s, d) => s + dirm[d].cny, 0);
+              const big = ["大", "大单", "大双"];
+              const small = ["小", "小单", "小双"];
+              const bigCur = { kk: sumKK(big), usdt: sumUSDT(big), cny: sumCNY(big) };
+              const smlCur = { kk: sumKK(small), usdt: sumUSDT(small), cny: sumCNY(small) };
+              const bigTotal = bigCur.kk + bigCur.usdt + bigCur.cny;
+              const smlTotal = smlCur.kk + smlCur.usdt + smlCur.cny;
+              const grandTotal = bigTotal + smlTotal;
+              const grandAll = grandTotal + sumKK(["单", "双", "其他"]) + sumUSDT(["单", "双", "其他"]) + sumCNY(["单", "双", "其他"]);
+              const pct = (n: number) => grandAll > 0 ? Math.round(n / grandAll * 100) : 0;
               const fmt = (n: number) => n > 0 ? n.toLocaleString("zh-CN", { maximumFractionDigits: 0 }) : "";
-              const curLabel: Record<Cur, { label: string; cls: string }> = {
-                kk:   { label: "KK",   cls: "text-yellow-400" },
-                usdt: { label: "USDT", cls: "text-emerald-400" },
-                cny:  { label: "CNY",  cls: "text-blue-400" },
-              };
-              const KK_RATE = 100_000;
-              const CNY_RATE = 6.7;
-              const toUsdt = (c: { kk: number; usdt: number; cny: number }) =>
-                c.kk / KK_RATE + c.usdt + c.cny / CNY_RATE;
-              const fmtU = (u: number) => u.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-              const CurLines = ({ totCur }: { totCur: { kk: number; usdt: number; cny: number } }) => {
-                const uTotal = toUsdt(totCur);
+              const toU = (c: { kk: number; usdt: number; cny: number }) => c.kk / 100000 + c.usdt + c.cny / 6.7;
+              const fU = (u: number) => u.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+              const sumA = (d: string) => dirm[d].kk + dirm[d].usdt + dirm[d].cny;
+              const CurLines = ({ c }: { c: { kk: number; usdt: number; cny: number } }) => {
+                const u = toU(c);
                 return (
                   <div className="space-y-1 mt-1.5">
-                    {(["kk", "usdt", "cny"] as Cur[]).map(c => totCur[c] > 0 ? (
-                      <div key={c} className="flex items-center justify-between gap-2 text-sm">
-                        <span className={`${curLabel[c].cls} font-semibold`}>{curLabel[c].label}</span>
-                        <span className="text-white font-mono">{fmt(totCur[c])}</span>
+                    {(["kk", "usdt", "cny"] as const).map(cur => c[cur] > 0 ? (
+                      <div key={cur} className="flex items-center justify-between gap-2 text-sm">
+                        <span className={`${cur === "kk" ? "text-yellow-400" : cur === "usdt" ? "text-emerald-400" : "text-blue-400"} font-semibold`}>{cur === "kk" ? "KK" : cur.toUpperCase()}</span>
+                        <span className="text-white font-mono">{fmt(c[cur])}</span>
                       </div>
                     ) : null)}
-                    {uTotal > 0 && (
+                    {u > 0 && (
                       <div className="flex items-center justify-between gap-2 text-sm border-t border-emerald-500/20 pt-1 mt-1">
                         <span className="text-emerald-400/70 font-semibold">≈ U</span>
-                        <span className="text-emerald-300 font-mono font-bold">{fmtU(uTotal)}</span>
+                        <span className="text-emerald-300 font-mono font-bold">{fU(u)}</span>
                       </div>
                     )}
                   </div>
                 );
               };
+              const clr: Record<string, { border: string; bg: string; tx: string }> = {
+                "大单": { border: "border-red-500/20", bg: "bg-red-500/5", tx: "text-red-400" },
+                "大双": { border: "border-red-500/20", bg: "bg-red-500/5", tx: "text-red-400" },
+                "大":   { border: "border-red-500/20", bg: "bg-red-500/5", tx: "text-red-400" },
+                "小单": { border: "border-sky-500/20", bg: "bg-sky-500/5", tx: "text-sky-400" },
+                "小双": { border: "border-sky-500/20", bg: "bg-sky-500/5", tx: "text-sky-400" },
+                "小":   { border: "border-sky-500/20", bg: "bg-sky-500/5", tx: "text-sky-400" },
+                "单":   { border: "border-purple-500/20", bg: "bg-purple-500/5", tx: "text-purple-400" },
+                "双":   { border: "border-teal-500/20", bg: "bg-teal-500/5", tx: "text-teal-400" },
+                "其他": { border: "border-slate-500/20", bg: "bg-slate-500/5", tx: "text-slate-400" },
+              };
               return (
                 <div className="bg-[#161929] border border-[#252a3d] rounded-2xl p-4 space-y-3">
-                  <span className="text-white font-semibold text-sm">方向统计（纯方向 / 数字）</span>
-                  {/* 大/小/单/双/其他 总览 */}
-                  <div className="grid grid-cols-5 gap-1.5">
-                    {(["大", "小", "单", "双", "其他"] as const).map(d => {
-                      const colorMap: Record<string, { border: string; bg: string; text: string; label: string }> = {
-                        "大": { border: "border-red-500/30", bg: "bg-red-500/5", text: "text-red-400", label: "大" },
-                        "小": { border: "border-sky-500/30", bg: "bg-sky-500/5", text: "text-sky-400", label: "小" },
-                        "单": { border: "border-purple-500/30", bg: "bg-purple-500/5", text: "text-purple-400", label: "单" },
-                        "双": { border: "border-teal-500/30", bg: "bg-teal-500/5", text: "text-teal-400", label: "双" },
-                        "其他": { border: "border-slate-500/30", bg: "bg-slate-500/5", text: "text-slate-400", label: "其他" },
-                      };
-                      const c = colorMap[d];
-                      return (
-                        <div key={d} className={`rounded-lg border ${c.border} ${c.bg} px-2 py-2`}>
-                          <div className={`${c.text} font-bold text-lg text-center`}>{pct(sumDir(d))}%</div>
-                          <div className={`${c.text} text-[10px] font-semibold text-center mt-0.5`}>{c.label}</div>
-                          {sumDir(d) > 0 && <CurLines totCur={dt[d]} />}
-                        </div>
-                      );
-                    })}
+                  <span className="text-white font-semibold text-sm">方向统计</span>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="rounded-xl border border-red-500/30 bg-red-500/5 px-3 py-2.5">
+                      <div className="text-xs text-red-400 font-semibold text-center">🔴 大（合计）</div>
+                      <div className="text-red-300 font-bold text-2xl text-center">{pct(bigTotal)}%</div>
+                      <CurLines c={bigCur} />
+                    </div>
+                    <div className="rounded-xl border border-sky-500/30 bg-sky-500/5 px-3 py-2.5">
+                      <div className="text-xs text-sky-400 font-semibold text-center">🔵 小（合计）</div>
+                      <div className="text-sky-300 font-bold text-2xl text-center">{pct(smlTotal)}%</div>
+                      <CurLines c={smlCur} />
+                    </div>
                   </div>
-                  {/* 进度条 大/小/单/双/其他 */}
-                  {grandTotal > 0 && (
-                    <div className="flex h-2 rounded-full overflow-hidden gap-0.5">
-                      {(["大", "小", "单", "双", "其他"] as const).map(d => {
-                        const barColor: Record<string, string> = {
-                          "大": "bg-red-500/70",
-                          "小": "bg-sky-500/70",
-                          "单": "bg-purple-500/70",
-                          "双": "bg-teal-500/70",
-                          "其他": "bg-slate-500/70",
-                        };
-                        return (
-                          <div key={d} className={barColor[d]} style={{ width: `${pct(sumDir(d))}%` }} />
-                        );
-                      })}
+                  {grandAll > 0 && (
+                    <div className="h-1.5 rounded-full bg-sky-500/30 overflow-hidden">
+                      <div className="h-full rounded-full bg-red-500/70 transition-all duration-300" style={{ width: `${pct(grandTotal)}%` }} />
                     </div>
                   )}
-                  {/* 细分：每格按币种列出 */}
-                  <div className="grid grid-cols-5 gap-1.5">
-                    {(["大", "小", "单", "双", "其他"] as const).map(d => {
-                      const colorMap: Record<string, { border: string; bg: string; text: string }> = {
-                        "大": { border: "border-red-500/20", bg: "bg-red-500/5", text: "text-red-400" },
-                        "小": { border: "border-sky-500/20", bg: "bg-sky-500/5", text: "text-sky-400" },
-                        "单": { border: "border-purple-500/20", bg: "bg-purple-500/5", text: "text-purple-400" },
-                        "双": { border: "border-teal-500/20", bg: "bg-teal-500/5", text: "text-teal-400" },
-                        "其他": { border: "border-slate-500/20", bg: "bg-slate-500/5", text: "text-slate-400" },
-                      };
-                      const c = colorMap[d];
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {allDirs.map(d => {
+                      const c = clr[d];
                       return (
                         <div key={d} className={`rounded-lg border ${c.border} ${c.bg} px-2.5 py-2`}>
-                          <div className={`text-sm font-semibold text-center mb-1.5 ${c.text}`}>{d}</div>
-                          {(["kk", "usdt", "cny"] as Cur[]).map(cur => dt[d][cur] > 0 ? (
+                          <div className={`text-sm font-semibold text-center mb-1.5 ${c.tx}`}>{d}</div>
+                          {(["kk", "usdt", "cny"] as const).map(cur => dirm[d][cur] > 0 ? (
                             <div key={cur} className="flex items-center justify-between text-xs">
-                              <span className={`${curLabel[cur].cls} font-semibold`}>{curLabel[cur].label}</span>
-                              <span className="text-white font-mono">{fmt(dt[d][cur])}</span>
+                              <span className={`${cur === "kk" ? "text-yellow-400" : cur === "usdt" ? "text-emerald-400" : "text-blue-400"} font-semibold`}>{cur === "kk" ? "KK" : cur.toUpperCase()}</span>
+                              <span className="text-white font-mono">{fmt(dirm[d][cur])}</span>
                             </div>
                           ) : null)}
-                          {toUsdt(dt[d]) > 0 && (
+                          {toU(dirm[d]) > 0 && (
                             <div className="flex items-center justify-between text-xs border-t border-emerald-500/20 pt-1 mt-1">
                               <span className="text-emerald-400/70 font-semibold">≈ U</span>
-                              <span className="text-emerald-300 font-mono font-bold">{fmtU(toUsdt(dt[d]))}</span>
+                              <span className="text-emerald-300 font-mono font-bold">{fU(toU(dirm[d]))}</span>
                             </div>
                           )}
-                          {sumDir(d) === 0 && <div className="text-slate-700 text-[10px] text-center">—</div>}
+                          {sumA(d) === 0 && <div className="text-slate-700 text-[10px] text-center">—</div>}
                         </div>
                       );
                     })}
