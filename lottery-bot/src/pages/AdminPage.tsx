@@ -2234,21 +2234,23 @@ export default function AdminPage() {
 
             {/* 方向统计 */}
             {hashBets.length > 0 && (() => {
-              type Dir = "大单" | "大双" | "大" | "小单" | "小双" | "小";
+              type Dir = "大" | "小" | "单" | "双";
               type Cur = "kk" | "usdt" | "cny";
+              const isNumDir = (s: string) => /^\d+$/.test(s);
               const zero = () => ({ kk: 0, usdt: 0, cny: 0 });
-              const dt: Record<Dir, { kk: number; usdt: number; cny: number }> = {
-                "大单": zero(), "大双": zero(), "大": zero(),
-                "小单": zero(), "小双": zero(), "小": zero(),
+              const dt: Record<string, { kk: number; usdt: number; cny: number }> = {
+                "大": zero(), "小": zero(), "单": zero(), "双": zero(), "其他": zero(),
               };
               for (const b of hashBets) {
-                const d = b.direction as Dir;
-                if (d in dt) dt[d][b.currency] += b.amount;
+                const d = b.direction.trim();
+                if (d === "大" || d === "小" || d === "单" || d === "双") {
+                  dt[d][b.currency] += b.amount;
+                } else if (isNumDir(d)) {
+                  dt["其他"][b.currency] += b.amount;
+                }
               }
-              const sumDir = (d: Dir) => dt[d].kk + dt[d].usdt + dt[d].cny;
-              const bigTotal = sumDir("大单") + sumDir("大双") + sumDir("大");
-              const smallTotal = sumDir("小单") + sumDir("小双") + sumDir("小");
-              const grandTotal = bigTotal + smallTotal;
+              const sumDir = (d: string) => dt[d].kk + dt[d].usdt + dt[d].cny;
+              const grandTotal = sumDir("大") + sumDir("小") + sumDir("单") + sumDir("双") + sumDir("其他");
               const pct = (n: number) => grandTotal > 0 ? Math.round(n / grandTotal * 100) : 0;
               const fmt = (n: number) => n > 0 ? n.toLocaleString("zh-CN", { maximumFractionDigits: 0 }) : "";
               const curLabel: Record<Cur, { label: string; cls: string }> = {
@@ -2280,41 +2282,64 @@ export default function AdminPage() {
                   </div>
                 );
               };
-              const bigCur = { kk: ["大单","大双","大" as Dir].reduce((s,d) => s + dt[d as Dir].kk, 0), usdt: ["大单","大双","大" as Dir].reduce((s,d) => s + dt[d as Dir].usdt, 0), cny: ["大单","大双","大" as Dir].reduce((s,d) => s + dt[d as Dir].cny, 0) };
-              const smlCur = { kk: ["小单","小双","小" as Dir].reduce((s,d) => s + dt[d as Dir].kk, 0), usdt: ["小单","小双","小" as Dir].reduce((s,d) => s + dt[d as Dir].usdt, 0), cny: ["小单","小双","小" as Dir].reduce((s,d) => s + dt[d as Dir].cny, 0) };
               return (
                 <div className="bg-[#161929] border border-[#252a3d] rounded-2xl p-4 space-y-3">
-                  <span className="text-white font-semibold text-sm">方向统计</span>
-                  {/* 大 vs 小 总览（含币种细分） */}
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="rounded-xl border border-red-500/30 bg-red-500/5 px-3 py-2.5">
-                      <div className="text-xs text-red-400 font-semibold text-center">🔴 大（合计）</div>
-                      <div className="text-red-300 font-bold text-2xl text-center">{pct(bigTotal)}%</div>
-                      <CurLines totCur={bigCur} />
-                    </div>
-                    <div className="rounded-xl border border-sky-500/30 bg-sky-500/5 px-3 py-2.5">
-                      <div className="text-xs text-sky-400 font-semibold text-center">🔵 小（合计）</div>
-                      <div className="text-sky-300 font-bold text-2xl text-center">{pct(smallTotal)}%</div>
-                      <CurLines totCur={smlCur} />
-                    </div>
+                  <span className="text-white font-semibold text-sm">方向统计（纯方向 / 数字）</span>
+                  {/* 大/小/单/双/其他 总览 */}
+                  <div className="grid grid-cols-5 gap-1.5">
+                    {(["大", "小", "单", "双", "其他"] as const).map(d => {
+                      const colorMap: Record<string, { border: string; bg: string; text: string; label: string }> = {
+                        "大": { border: "border-red-500/30", bg: "bg-red-500/5", text: "text-red-400", label: "大" },
+                        "小": { border: "border-sky-500/30", bg: "bg-sky-500/5", text: "text-sky-400", label: "小" },
+                        "单": { border: "border-purple-500/30", bg: "bg-purple-500/5", text: "text-purple-400", label: "单" },
+                        "双": { border: "border-teal-500/30", bg: "bg-teal-500/5", text: "text-teal-400", label: "双" },
+                        "其他": { border: "border-slate-500/30", bg: "bg-slate-500/5", text: "text-slate-400", label: "其他" },
+                      };
+                      const c = colorMap[d];
+                      return (
+                        <div key={d} className={`rounded-lg border ${c.border} ${c.bg} px-2 py-2`}>
+                          <div className={`${c.text} font-bold text-lg text-center`}>{pct(sumDir(d))}%</div>
+                          <div className={`${c.text} text-[10px] font-semibold text-center mt-0.5`}>{c.label}</div>
+                          {sumDir(d) > 0 && <CurLines totCur={dt[d]} />}
+                        </div>
+                      );
+                    })}
                   </div>
-                  {/* 进度条 */}
+                  {/* 进度条 大/小/单/双/其他 */}
                   {grandTotal > 0 && (
-                    <div className="h-1.5 rounded-full bg-sky-500/30 overflow-hidden">
-                      <div className="h-full rounded-full bg-red-500/70 transition-all duration-300" style={{ width: `${pct(bigTotal)}%` }} />
+                    <div className="flex h-2 rounded-full overflow-hidden gap-0.5">
+                      {(["大", "小", "单", "双", "其他"] as const).map(d => {
+                        const barColor: Record<string, string> = {
+                          "大": "bg-red-500/70",
+                          "小": "bg-sky-500/70",
+                          "单": "bg-purple-500/70",
+                          "双": "bg-teal-500/70",
+                          "其他": "bg-slate-500/70",
+                        };
+                        return (
+                          <div key={d} className={barColor[d]} style={{ width: `${pct(sumDir(d))}%` }} />
+                        );
+                      })}
                     </div>
                   )}
                   {/* 细分：每格按币种列出 */}
-                  <div className="grid grid-cols-3 gap-1.5">
-                    {(["大单", "大双", "大", "小单", "小双", "小"] as Dir[]).map(d => {
-                      const isBig = d.startsWith("大");
+                  <div className="grid grid-cols-5 gap-1.5">
+                    {(["大", "小", "单", "双", "其他"] as const).map(d => {
+                      const colorMap: Record<string, { border: string; bg: string; text: string }> = {
+                        "大": { border: "border-red-500/20", bg: "bg-red-500/5", text: "text-red-400" },
+                        "小": { border: "border-sky-500/20", bg: "bg-sky-500/5", text: "text-sky-400" },
+                        "单": { border: "border-purple-500/20", bg: "bg-purple-500/5", text: "text-purple-400" },
+                        "双": { border: "border-teal-500/20", bg: "bg-teal-500/5", text: "text-teal-400" },
+                        "其他": { border: "border-slate-500/20", bg: "bg-slate-500/5", text: "text-slate-400" },
+                      };
+                      const c = colorMap[d];
                       return (
-                        <div key={d} className={`rounded-lg border px-2.5 py-2 ${isBig ? "border-red-500/20 bg-red-500/5" : "border-sky-500/20 bg-sky-500/5"}`}>
-                          <div className={`text-sm font-semibold text-center mb-1.5 ${isBig ? "text-red-400" : "text-sky-400"}`}>{d}</div>
-                          {(["kk", "usdt", "cny"] as Cur[]).map(c => dt[d][c] > 0 ? (
-                            <div key={c} className="flex items-center justify-between text-xs">
-                              <span className={`${curLabel[c].cls} font-semibold`}>{curLabel[c].label}</span>
-                              <span className="text-white font-mono">{fmt(dt[d][c])}</span>
+                        <div key={d} className={`rounded-lg border ${c.border} ${c.bg} px-2.5 py-2`}>
+                          <div className={`text-sm font-semibold text-center mb-1.5 ${c.text}`}>{d}</div>
+                          {(["kk", "usdt", "cny"] as Cur[]).map(cur => dt[d][cur] > 0 ? (
+                            <div key={cur} className="flex items-center justify-between text-xs">
+                              <span className={`${curLabel[cur].cls} font-semibold`}>{curLabel[cur].label}</span>
+                              <span className="text-white font-mono">{fmt(dt[d][cur])}</span>
                             </div>
                           ) : null)}
                           {toUsdt(dt[d]) > 0 && (
