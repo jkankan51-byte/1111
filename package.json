@@ -1,0 +1,16 @@
+{
+  "name": "lottery-bot-monorepo",
+  "private": true,
+  "packageManager": "pnpm@9.15.0",
+  "scripts": {
+    "build": "pnpm --filter @workspace/lottery-bot run build",
+    "start": "node api-server/dist/index.mjs",
+    "db:push": "drizzle-kit push"
+  },
+  "devDependencies": {
+    "drizzle-kit": "^0.30.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

@@ -1,0 +1,33 @@
+services:
+  - type: web
+    name: lottery-bot
+    env: node
+    region: singapore
+    plan: free
+    buildCommand: NODE_ENV=development pnpm install && cd api-server && node build.mjs && cd .. && pnpm --filter @workspace/lottery-bot run build
+    startCommand: pnpm db:push; node api-server/dist/index.mjs
+    healthCheckPath: /api/healthz
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "10000"
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: DATABASE_URL
+        fromDatabase:
+          name: lottery-bot-db
+          property: connectionString
+      - key: DATA_DIR
+        value: /data
+      - key: TELEGRAM_API_ID
+        value: "34148245"
+      - key: TELEGRAM_API_HASH
+        value: "403e2fbc5145d50341a3b953a17cd797"
+
+databases:
+  - name: lottery-bot-db
+    databaseName: lottery_bot
+    user: lottery_bot
+    plan: free
+    region: singapore
