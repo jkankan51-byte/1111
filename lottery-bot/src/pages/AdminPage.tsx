@@ -233,6 +233,8 @@ export default function AdminPage() {
   const [nowTs, setNowTs] = useState(() => Date.now());
   // 停止下注后快照数据（等待开奖时展示）
   const [hashSnap, setHashSnap] = useState<{ term: number; dirs: Record<string, { kk: number; usdt: number; cny: number }>; closedAt: number } | null>(null);
+  // 赔付记录：key = term:direction → 赔付金额
+  const [hashPayouts, setHashPayouts] = useState<Map<string, number>>(new Map());
   type PeriodRecord = {
     term: number | null;
     result: string | null;
@@ -596,6 +598,14 @@ export default function AdminPage() {
             if (ev.term) setHashTerm(ev.term as number);
             if (ev.snap) setHashSnap(ev.snap as { term: number; dirs: Record<string, { kk: number; usdt: number; cny: number }>; closedAt: number });
             else setHashSnap(null);
+            // 更新赔付记录
+            if (ev.payouts) {
+              const pm = new Map<string, number>();
+              for (const p of (ev.payouts as { key: string; amount: number }[])) {
+                pm.set(p.key, p.amount);
+              }
+              setHashPayouts(pm);
+            }
           }
         } catch { /* ignore */ }
       };
@@ -2155,8 +2165,15 @@ export default function AdminPage() {
               </div>
             )}
 
-            {/* 玩家输赢统计 */}
+            {/* 玩家输赢统计 — 按实际赔率计算盈利 */}
             {hashBets.length > 0 && (() => {
+              const getOdds = (dir: string): number => {
+                if (dir === "大" || dir === "小" || dir === "单" || dir === "双") return 1.98;
+                if (dir === "大单" || dir === "大双" || dir === "小单" || dir === "小双") return 3.8;
+                if (dir === "豹子" || dir === "顺子" || dir === "对子" || dir === "极大" || dir === "极小") return 9.8;
+                if (/^\d{1,2}$/.test(dir)) return 9.8;
+                return 1.98;
+              };
               const betCat = (dir: string): string => {
                 const singles = ["大","小","单","双"];
                 const combos = ["大单","大双","小单","小双"];
@@ -2179,23 +2196,50 @@ export default function AdminPage() {
                 if (dir === "双" && r.endsWith("双")) return true;
                 return false;
               };
-              const players: Record<string, { bets: number; cats: Record<string, number>; kk: number; usdt: number; cny: number; wins: number; losses: number }> = {};
+              const players: Record<string, { bets: number; cats: Record<string, number>; kk: number; usdt: number; cny: number; profit: number }> = {};
+              // 先统计每期每方向的总下注额（用于赔付比例计算）
+              const dirTotals = new Map<string, number>(); // key: term:direction → USD总额
+              for (const b of hashBets) {
+                if (b.termContext != null) {
+                  const dk = `${b.termContext}:${b.direction}`;
+                  const amtUSD = b.currency === "kk" ? b.amount / 100000 : b.currency === "usdt" ? b.amount : b.amount / 6.7;
+                  dirTotals.set(dk, (dirTotals.get(dk) ?? 0) + amtUSD);
+                }
+              }
               for (const b of hashBets) {
                 const nm = b.senderName || b.senderId || "未知";
                 if (!players[nm]) {
                   const cats: Record<string, number> = {};
                   for (const c of allCats) cats[c] = 0;
-                  players[nm] = { bets: 0, cats, kk: 0, usdt: 0, cny: 0, wins: 0, losses: 0 };
+                  players[nm] = { bets: 0, cats, kk: 0, usdt: 0, cny: 0, profit: 0 };
                 }
                 const p = players[nm]; p.bets++;
                 const cat = betCat(b.direction);
                 if (p.cats[cat] !== undefined) p.cats[cat]++;
+                const amtUSD = b.currency === "kk" ? b.amount / 100000 : b.currency === "usdt" ? b.amount : b.amount / 6.7;
                 if (b.currency === "kk") p.kk += b.amount;
                 else if (b.currency === "usdt") p.usdt += b.amount;
                 else p.cny += b.amount;
                 if (b.termContext != null) {
                   const result = termResult.get(b.termContext);
-                  if (result) { if (isWin(b.direction, result)) p.wins++; else p.losses++; }
+                  if (result) {
+                    const isWinner = isWin(b.direction, result);
+                    if (isWinner) {
+                      // 优先使用群内实际赔付
+                      const pk = `${b.termContext}:${b.direction}`;
+                      const payoutAmt = hashPayouts.get(pk);
+                      if (payoutAmt && payoutAmt > 0) {
+                        const totalBet = dirTotals.get(pk) ?? amtUSD;
+                        const payoutRatio = payoutAmt / totalBet;
+                        p.profit += amtUSD * (payoutRatio - 1);
+                      } else {
+                        // 无赔付数据时用标准赔率估算
+                        p.profit += amtUSD * (getOdds(b.direction) - 1);
+                      }
+                    } else {
+                      p.profit -= amtUSD;
+                    }
+                  }
                 }
               }
               const sorted = Object.entries(players).sort((a, b) => b[1].kk + b[1].usdt + b[1].cny - (a[1].kk + a[1].usdt + a[1].cny));
@@ -2235,9 +2279,8 @@ export default function AdminPage() {
                           ))}
                           <th className="text-right py-2 px-1.5 whitespace-nowrap border-l border-[#2a3050] text-yellow-300 font-semibold text-xs">KK</th>
                           <th className="text-right py-2 px-1.5 whitespace-nowrap text-emerald-300 font-semibold text-xs">U</th>
-                          <th className="text-right py-2 px-1.5 whitespace-nowrap text-blue-300 font-semibold text-xs">CNY</th>
-                          <th className="text-right py-2 px-1.5 whitespace-nowrap text-green-300 font-semibold text-xs">赢</th>
-                          <th className="text-right py-2 px-1.5 whitespace-nowrap text-red-300 font-semibold text-xs">输</th>
+                           <th className="text-right py-2 px-1.5 whitespace-nowrap text-blue-300 font-semibold text-xs">CNY</th>
+                           <th className="text-right py-2 px-1.5 whitespace-nowrap font-semibold text-xs text-emerald-300">盈利≈U</th>
                         </tr>
                         <tr className="bg-[#161929] border-b border-[#252a3d]">
                           <th className="text-left py-1 px-2 sticky left-0 z-30 bg-[#161929]"></th>
@@ -2246,10 +2289,9 @@ export default function AdminPage() {
                             <th key={c} className={`text-center py-1 px-0.5 font-normal text-[10px] border-l border-[#1e2340] ${/^\d+$/.test(c) ? "text-slate-500" : "text-slate-400"}`}>{c}</th>
                           ))}
                           <th className="text-right py-1 px-1.5 border-l border-[#1e2340]"></th>
-                          <th className="text-right py-1 px-1.5"></th>
-                          <th className="text-right py-1 px-1.5"></th>
-                          <th className="text-right py-1 px-1.5"></th>
-                          <th className="text-right py-1 px-1.5"></th>
+                           <th className="text-right py-1 px-1.5"></th>
+                           <th className="text-right py-1 px-1.5"></th>
+                           <th className="text-right py-1 px-1.5"></th>
                         </tr>
                       </thead>
                       <tbody>
@@ -2263,8 +2305,9 @@ export default function AdminPage() {
                             <td className="py-1.5 px-1.5 text-right text-yellow-400 font-mono text-xs whitespace-nowrap border-l border-[#1e2340]">{fmt(p.kk)}</td>
                             <td className="py-1.5 px-1.5 text-right text-emerald-400 font-mono text-xs whitespace-nowrap">{p.usdt > 0 ? p.usdt.toLocaleString("zh-CN", { maximumFractionDigits: 2 }) : "—"}</td>
                             <td className="py-1.5 px-1.5 text-right text-blue-400 font-mono text-xs whitespace-nowrap">{p.cny > 0 ? p.cny.toLocaleString("zh-CN", { maximumFractionDigits: 2 }) : "—"}</td>
-                            <td className="py-1.5 px-1.5 text-right text-green-400 font-mono text-xs">{p.wins || "—"}</td>
-                            <td className="py-1.5 px-1.5 text-right text-red-400 font-mono text-xs">{p.losses || "—"}</td>
+                            <td className={`py-1.5 px-1.5 text-right font-mono text-xs font-bold ${p.profit > 0 ? "text-green-400" : p.profit < 0 ? "text-red-400" : "text-slate-500"}`}>
+                              {p.profit !== 0 ? (p.profit > 0 ? "+" : "") + p.profit.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "—"}
+                            </td>
                           </tr>
                         ))}
                       </tbody>
