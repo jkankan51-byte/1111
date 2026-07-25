@@ -238,7 +238,7 @@ export default function AdminPage() {
   // 玩家输赢全屏切换
   const [hashFull, setHashFull] = useState(false);
   // 封盘推荐
-  const [closingRec, setClosingRec] = useState<{ emptyNums: number[] | null; leastDirs: string[]; term: number | null } | null>(null);
+  const [closingRec, setClosingRec] = useState<{ emptyNums: number[]; leastDirs: string[]; suggest?: string; term: number | null } | null>(null);
   type PeriodRecord = {
     term: number | null;
     result: string | null;
@@ -611,7 +611,7 @@ export default function AdminPage() {
               setHashPayouts(pm);
             }
           } else if (ev.type === "closing:recommend") {
-            setClosingRec({ emptyNums: ev.emptyNums as number[] | null, leastDirs: ev.leastDirs as string[], term: ev.term as number | null });
+             setClosingRec({ emptyNums: ev.emptyNums as number[], leastDirs: ev.leastDirs as string[], suggest: ev.suggest as string | undefined, term: ev.term as number | null });
           }
         } catch { /* ignore */ }
       };
@@ -2198,6 +2198,12 @@ export default function AdminPage() {
                     </div>
                   </div>
                 </div>
+                {closingRec.suggest && (
+                  <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl px-4 py-3 text-center">
+                    <span className="text-xs text-slate-400">算法推荐 → </span>
+                    <span className="text-white font-bold text-lg font-mono">{closingRec.suggest}</span>
+                  </div>
+                )}
               </div>
             )}
 
@@ -2235,7 +2241,6 @@ export default function AdminPage() {
                 return false;
               };
               const players: Record<string, { bets: number; cats: Record<string, number>; kk: number; usdt: number; cny: number; winU: number; lossU: number }> = {};
-              // 先统计每期每方向的总下注额（用于赔付比例计算）
               const dirTotals = new Map<string, number>();
               for (const b of currentBets) {
                 if (b.termContext != null) {
@@ -2254,7 +2259,7 @@ export default function AdminPage() {
                 const p = players[nm]; p.bets++;
                 const cat = betCat(b.direction);
                 const amtUSD = b.currency === "kk" ? b.amount / 100000 : b.currency === "usdt" ? b.amount : b.amount / 6.7;
-                if (p.cats[cat] !== undefined) p.cats[cat] += amtUSD; // 累加金额(USD)而非次数
+                if (p.cats[cat] !== undefined) p.cats[cat] += amtUSD;
                 if (b.currency === "kk") p.kk += b.amount;
                 else if (b.currency === "usdt") p.usdt += b.amount;
                 else p.cny += b.amount;
@@ -2263,7 +2268,6 @@ export default function AdminPage() {
                   if (result) {
                     const isWinner = isWin(b.direction, result);
                     if (isWinner) {
-                      // 优先使用群内实际赔付
                       const pk = `${b.termContext}:${b.direction}`;
                       const payoutAmt = hashPayouts.get(pk);
                       if (payoutAmt && payoutAmt > 0) {
@@ -2282,7 +2286,7 @@ export default function AdminPage() {
               const toVal = (p: { kk: number; usdt: number; cny: number }) => p.kk / 100000 + p.usdt + p.cny / 6.7;
               const sorted = Object.entries(players).sort((a, b) => toVal(b[1]) - toVal(a[1]));
               const fmt = (n: number) => n > 0 ? n.toLocaleString("zh-CN", { maximumFractionDigits: 0 }) : "—";
-              const grp: Record<string, string[]> = {
+              const grp = {
                 "大小单双": ["大","小","单","双"],
                 "组合": ["大单","大双","小单","小双"],
                 "数字": Array.from({ length: 28 }, (_, i) => String(i)),
@@ -2357,86 +2361,64 @@ export default function AdminPage() {
               );
             })()}
 
-            {/* 玩家下注历史（所有期累计） */}
+            {/* 总金额统计 */}
             {hashBets.length > 0 && (() => {
-              type HRec = { bets: number; amtU: number; wins: number; losses: number; winU: number; lossU: number; grp: string };
-              const hist: Record<string, Record<string, HRec>> = {};
-              const termResult = new Map<number, string>();
-              for (const h of hashHistory) if (h.term != null && h.result) termResult.set(h.term, h.result);
-              const isWin = (dir: string, r: string): boolean => {
-                if (!r) return false;
-                if (dir === r) return true;
-                if (dir === "大" && r.startsWith("大")) return true;
-                if (dir === "小" && r.startsWith("小")) return true;
-                if (dir === "单" && r.endsWith("单")) return true;
-                if (dir === "双" && r.endsWith("双")) return true;
-                return false;
+              const catKeys = {
+                "大小单双": ["大","小","单","双"],
+                "组合": ["大单","大双","小单","小双"],
+                "数字": Array.from({ length: 28 }, (_, i) => String(i)),
+                "特殊": ["豹子","顺子","对子","极大","极小"],
               };
+              const totals: Record<string, { kk: number; usdt: number; cny: number; u: number }> = {};
+              for (const cats of Object.values(catKeys).flat()) totals[cats] = { kk: 0, usdt: 0, cny: 0, u: 0 };
               for (const b of hashBets) {
-                const nm = b.senderName || b.senderId || "未知";
-                if (!hist[nm]) hist[nm] = {};
-                const dir = b.direction;
-                if (!hist[nm][dir]) hist[nm][dir] = { bets: 0, amtU: 0, wins: 0, losses: 0, winU: 0, lossU: 0, grp: "" };
-                const h = hist[nm][dir];
-                h.bets++;
-                if (b.groupTitle) h.grp = b.groupTitle;
-                const amtU = b.currency === "kk" ? b.amount / 100000 : b.currency === "usdt" ? b.amount : b.amount / 6.7;
-                h.amtU += amtU;
-                if (b.termContext != null) {
-                  const result = termResult.get(b.termContext);
-                  if (result) {
-                    if (isWin(b.direction, result)) { h.wins++; h.winU += amtU; }
-                    else { h.losses++; h.lossU += amtU; }
-                  }
+                const d = b.direction;
+                if (totals[d] !== undefined) {
+                  totals[d].kk += b.currency === "kk" ? b.amount : 0;
+                  totals[d].usdt += b.currency === "usdt" ? b.amount : 0;
+                  totals[d].cny += b.currency === "cny" ? b.amount : 0;
+                  totals[d].u += b.currency === "kk" ? b.amount / 100000 : b.currency === "usdt" ? b.amount : b.amount / 6.7;
                 }
               }
-              const flat: { name: string; dir: string; bets: number; amtU: number; wins: number; losses: number; winU: number; lossU: number; grp: string }[] = [];
-              for (const [name, dirs] of Object.entries(hist)) {
-                for (const [dir, h] of Object.entries(dirs)) {
-                  flat.push({ name, dir, ...h });
-                }
-              }
-              flat.sort((a, b) => b.amtU - a.amtU);
+              const fmt = (n: number) => n > 0 ? n.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "—";
+              const grpClr: Record<string, string> = {
+                "大小单双": "border-red-500/20 bg-red-500/5",
+                "组合": "border-amber-500/20 bg-amber-500/5",
+                "数字": "border-blue-500/20 bg-blue-500/5",
+                "特殊": "border-purple-500/20 bg-purple-500/5",
+              };
+              const grpTx: Record<string, string> = {
+                "大小单双": "text-red-300",
+                "组合": "text-amber-300",
+                "数字": "text-blue-300",
+                "特殊": "text-purple-300",
+              };
               return (
-                <div className="bg-[#161929] border border-[#252a3d] rounded-2xl overflow-hidden">
-                  <div className="px-4 py-3 border-b border-[#252a3d] flex items-center justify-between">
-                    <span className="text-white font-semibold text-sm">玩家下注历史</span>
-                    <span className="text-xs text-slate-500">{flat.length} 条</span>
-                  </div>
-                  <div className="overflow-auto" style={{ maxHeight: "50vh" }}>
-                    <table className="w-full text-xs">
-                      <thead className="sticky top-0 bg-[#1a1f35] z-10">
-                        <tr className="text-slate-500 border-b border-[#252a3d]">
-                          <th className="text-left py-2 px-2 whitespace-nowrap">玩家</th>
-                          <th className="text-left py-2 px-1 whitespace-nowrap">群组</th>
-                          <th className="text-left py-2 px-1 whitespace-nowrap">方向</th>
-                          <th className="text-right py-2 px-1 whitespace-nowrap">注数</th>
-                          <th className="text-right py-2 px-1 whitespace-nowrap">总下注≈U</th>
-                          <th className="text-right py-2 px-1 whitespace-nowrap text-green-400">赢</th>
-                          <th className="text-right py-2 px-1 whitespace-nowrap text-red-400">输</th>
-                          <th className="text-right py-2 px-1 whitespace-nowrap">赢U</th>
-                          <th className="text-right py-2 px-1 whitespace-nowrap">输U</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {flat.map((r, idx) => (
-                          <tr key={`${r.name}-${r.dir}`} className={`border-b border-[#1e2240] ${idx % 2 === 0 ? "bg-[#161929]" : "bg-[#1a1e30]"}`}>
-                            <td className="py-1.5 px-2 text-white font-semibold whitespace-nowrap max-w-[80px] overflow-hidden text-ellipsis" title={r.name}>
-                              {r.name.length > 6 ? r.name.slice(0, 6) + "…" : r.name}
-                            </td>
-                            <td className="py-1.5 px-1 text-slate-500 max-w-[60px] overflow-hidden text-ellipsis whitespace-nowrap" title={r.grp}>{r.grp || "—"}</td>
-                            <td className="py-1.5 px-1 text-slate-300">{r.dir}</td>
-                            <td className="py-1.5 px-1 text-right text-slate-300">{r.bets}</td>
-                            <td className="py-1.5 px-1 text-right text-white font-mono">{r.amtU.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                            <td className="py-1.5 px-1 text-right text-green-400">{r.wins || "—"}</td>
-                            <td className="py-1.5 px-1 text-right text-red-400">{r.losses || "—"}</td>
-                            <td className="py-1.5 px-1 text-right text-green-400 font-mono">{r.winU > 0 ? "+" + r.winU.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "—"}</td>
-                            <td className="py-1.5 px-1 text-right text-red-400 font-mono">{r.lossU > 0 ? "-" + r.lossU.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "—"}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                <div className="bg-[#161929] border border-[#252a3d] rounded-2xl p-4 space-y-3">
+                  <span className="text-white font-semibold text-sm">总金额统计</span>
+                  {Object.entries(catKeys).map(([g, cats]) => (
+                    <div key={g} className={`rounded-xl border ${grpClr[g]} p-3`}>
+                      <div className={`text-xs font-semibold mb-2 ${grpTx[g]}`}>{g}</div>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-1.5">
+                        {cats.map(c => {
+                          const t = totals[c];
+                          const u = t ? t.u : 0;
+                          if (u === 0) return null;
+                          return (
+                            <div key={c} className="bg-[#0d1117] rounded-lg px-2 py-1.5 text-center">
+                              <div className="text-white font-bold text-sm">{c}</div>
+                              <div className="text-white font-mono text-xs">{fmt(u)}<span className="text-slate-500 ml-0.5">U</span></div>
+                              <div className="flex items-center justify-center gap-1 text-[9px] mt-0.5">
+                                {t.kk > 0 && <span className="text-yellow-500/80">{t.kk.toLocaleString("zh-CN", { maximumFractionDigits: 0 })}K</span>}
+                                {t.usdt > 0 && <span className="text-emerald-500/80">{t.usdt.toLocaleString("zh-CN", { maximumFractionDigits: 2 })}U</span>}
+                                {t.cny > 0 && <span className="text-blue-500/80">{t.cny.toLocaleString("zh-CN", { maximumFractionDigits: 2 })}¥</span>}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               );
             })()}
