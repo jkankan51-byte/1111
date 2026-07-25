@@ -2339,6 +2339,92 @@ export default function AdminPage() {
               );
             })()}
 
+            {/* 玩家输赢统计 */}
+            {hashBets.length > 0 && (() => {
+              // 建立期号→开奖结果映射
+              const termResult = new Map<number, string>();
+              for (const h of hashHistory) {
+                if (h.term != null && h.result) termResult.set(h.term, h.result);
+              }
+              // 判断方向是否命中结果
+              const isWin = (dir: string, result: string): boolean => {
+                if (result.startsWith("大") || result.startsWith("小")) {
+                  if (dir === result) return true;
+                  if (dir === "大" && result.startsWith("大")) return true;
+                  if (dir === "小" && result.startsWith("小")) return true;
+                  if (dir === "单" && result.endsWith("单")) return true;
+                  if (dir === "双" && result.endsWith("双")) return true;
+                  if (dir === "大单" && result === "大单") return true;
+                  if (dir === "大双" && result === "大双") return true;
+                  if (dir === "小单" && result === "小单") return true;
+                  if (dir === "小双" && result === "小双") return true;
+                }
+                return false;
+              };
+              // 按玩家聚合
+              const players: Record<string, { bets: number; kk: number; usdt: number; cny: number; wins: number; losses: number; winKK: number; winUsdt: number; winCny: number; lossKK: number; lossUsdt: number; lossCny: number }> = {};
+              for (const b of hashBets) {
+                const nm = b.senderName || b.senderId || "未知";
+                if (!players[nm]) players[nm] = { bets: 0, kk: 0, usdt: 0, cny: 0, wins: 0, losses: 0, winKK: 0, winUsdt: 0, winCny: 0, lossKK: 0, lossUsdt: 0, lossCny: 0 };
+                const p = players[nm];
+                p.bets++;
+                if (b.currency === "kk") p.kk += b.amount;
+                else if (b.currency === "usdt") p.usdt += b.amount;
+                else p.cny += b.amount;
+                // 判断输赢
+                if (b.termContext != null) {
+                  const result = termResult.get(b.termContext);
+                  if (result) {
+                    if (isWin(b.direction, result)) {
+                      p.wins++;
+                      if (b.currency === "kk") p.winKK += b.amount;
+                      else if (b.currency === "usdt") p.winUsdt += b.amount;
+                      else p.winCny += b.amount;
+                    } else {
+                      p.losses++;
+                      if (b.currency === "kk") p.lossKK += b.amount;
+                      else if (b.currency === "usdt") p.lossUsdt += b.amount;
+                      else p.lossCny += b.amount;
+                    }
+                  }
+                }
+              }
+              const sorted = Object.entries(players).sort((a, b) => b[1].kk + b[1].usdt + b[1].cny - (a[1].kk + a[1].usdt + a[1].cny));
+              return (
+                <div className="bg-[#161929] border border-[#252a3d] rounded-2xl p-4 space-y-3">
+                  <span className="text-white font-semibold text-sm">玩家输赢</span>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="text-slate-500 border-b border-[#252a3d]">
+                          <th className="text-left py-2 pr-2">玩家</th>
+                          <th className="text-right py-2 px-1">注数</th>
+                          <th className="text-right py-2 px-1">下注KK</th>
+                          <th className="text-right py-2 px-1">下注U</th>
+                          <th className="text-right py-2 px-1">下注CNY</th>
+                          <th className="text-right py-2 px-1">赢</th>
+                          <th className="text-right py-2 px-1">输</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {sorted.map(([name, p]) => (
+                          <tr key={name} className="border-b border-[#252a3d]/50 hover:bg-white/5">
+                            <td className="py-2 pr-2 text-white font-semibold">{name}</td>
+                            <td className="py-2 px-1 text-right text-slate-300">{p.bets}</td>
+                            <td className="py-2 px-1 text-right text-yellow-400 font-mono">{p.kk > 0 ? p.kk.toLocaleString("zh-CN", { maximumFractionDigits: 0 }) : "—"}</td>
+                            <td className="py-2 px-1 text-right text-emerald-400 font-mono">{p.usdt > 0 ? p.usdt.toLocaleString("zh-CN", { maximumFractionDigits: 2 }) : "—"}</td>
+                            <td className="py-2 px-1 text-right text-blue-400 font-mono">{p.cny > 0 ? p.cny.toLocaleString("zh-CN", { maximumFractionDigits: 2 }) : "—"}</td>
+                            <td className="py-2 px-1 text-right text-green-400 font-mono">{p.wins}</td>
+                            <td className="py-2 px-1 text-right text-red-400 font-mono">{p.losses}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              );
+            })()}
+
             {/* 开奖历史 */}
             {(() => {
               const KK_RATE = 100_000;
