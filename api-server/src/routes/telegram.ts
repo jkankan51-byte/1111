@@ -6350,22 +6350,31 @@ async function pollOneCanadaGroup(session: TgSession, groupId: string): Promise<
       // ── 即将封盘提示 → 给出无人下注的数字和方向推荐 ──
       if (/即将封盘/.test(text) && /剩余\d+秒/.test(text)) {
         const termBets = canadaBets.filter(b => b.termContext === canadaCurrentBetTerm);
-        const betDirs = new Set(termBets.map(b => b.direction));
         const dirAmts: Record<string, number> = {};
+        const numAmts: Record<string, number> = {};
+        for (let n = 0; n <= 27; n++) { numAmts[String(n)] = 0; }
         for (const b of termBets) {
-          dirAmts[b.direction] = (dirAmts[b.direction] ?? 0) + b.amount;
+          const amtU = b.currency === "kk" ? b.amount / 100000 : b.currency === "usdt" ? b.amount : b.amount / 6.7;
+          dirAmts[b.direction] = (dirAmts[b.direction] ?? 0) + amtU;
+          if (/^\d{1,2}$/.test(b.direction)) numAmts[b.direction] = (numAmts[b.direction] ?? 0) + amtU;
         }
-        // 无人下注的数字 (0-27)
+        // 无人下注的数字 → 若全有则取下注最少的5个
         const emptyNums: number[] = [];
-        for (let n = 0; n <= 27; n++) {
-          if (!betDirs.has(String(n))) emptyNums.push(n);
+        const numEntries = Object.entries(numAmts).map(([k, v]) => ({ n: parseInt(k), amt: v }));
+        const emptyNumsRaw = numEntries.filter(e => e.amt === 0).map(e => e.n);
+        if (emptyNumsRaw.length > 0) {
+          emptyNums.push(...emptyNumsRaw);
+        } else {
+          // 全部有人下注 → 取金额最少的5个
+          numEntries.sort((a, b) => a.amt - b.amt);
+          emptyNums.push(...numEntries.slice(0, 5).map(e => e.n));
         }
-        // 下注最少的方向
+        // 下注最少的方向（取5个）
         const allDirs = ["大","小","单","双","大单","大双","小单","小双"];
         const sorted = allDirs.map(d => ({ dir: d, amt: dirAmts[d] ?? 0 })).sort((a, b) => a.amt - b.amt);
-        const leastDirs = sorted.filter(s => s.amt >= 0).slice(0, 4).map(s => `${s.dir}(${s.amt > 0 ? s.amt.toLocaleString("zh-CN", { maximumFractionDigits: 0 }) : "0"})`);
+        const leastDirs = sorted.slice(0, 5).map(s => `${s.dir}(${s.amt > 0 ? s.amt.toLocaleString("zh-CN", { maximumFractionDigits: 2 }) : "0"}U)`);
         pushAdminEvent("closing:recommend", {
-          emptyNums: emptyNums.length > 0 ? emptyNums : null,
+          emptyNums,
           leastDirs,
           term: canadaCurrentBetTerm,
         });
