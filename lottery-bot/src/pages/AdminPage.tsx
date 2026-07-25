@@ -2180,16 +2180,14 @@ export default function AdminPage() {
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="bg-[#1a1e30] rounded-xl p-3">
-                    <div className="text-xs text-amber-400 font-semibold mb-1.5">无人下注的数字</div>
-                    {closingRec.emptyNums && closingRec.emptyNums.length > 0 ? (
-                      <div className="flex flex-wrap gap-1">
-                        {closingRec.emptyNums.map(n => (
-                          <span key={n} className="text-white font-mono text-xs bg-[#0d1117] rounded px-2 py-0.5">{n}</span>
-                        ))}
-                      </div>
-                    ) : (
-                      <span className="text-slate-500 text-xs">全部数字都有人下注</span>
-                    )}
+                    <div className="text-xs text-amber-400 font-semibold mb-1.5">无人下注 / 最少数字</div>
+                    {closingRec.emptyNums.length > 0 ? (
+                       <div className="flex flex-wrap gap-1">
+                         {closingRec.emptyNums.map(n => (
+                           <span key={n} className="text-white font-mono text-xs bg-[#0d1117] rounded px-2 py-0.5">{n}</span>
+                         ))}
+                       </div>
+                     ) : null}
                   </div>
                   <div className="bg-[#1a1e30] rounded-xl p-3">
                     <div className="text-xs text-blue-400 font-semibold mb-1.5">下注最少的方向</div>
