@@ -2198,9 +2198,9 @@ export default function AdminPage() {
                 if (dir === "双" && r.endsWith("双")) return true;
                 return false;
               };
-              const players: Record<string, { bets: number; cats: Record<string, number>; kk: number; usdt: number; cny: number; profit: number }> = {};
+              const players: Record<string, { bets: number; cats: Record<string, number>; kk: number; usdt: number; cny: number; winU: number; lossU: number }> = {};
               // 先统计每期每方向的总下注额（用于赔付比例计算）
-              const dirTotals = new Map<string, number>(); // key: term:direction → USD总额
+              const dirTotals = new Map<string, number>();
               for (const b of hashBets) {
                 if (b.termContext != null) {
                   const dk = `${b.termContext}:${b.direction}`;
@@ -2213,12 +2213,12 @@ export default function AdminPage() {
                 if (!players[nm]) {
                   const cats: Record<string, number> = {};
                   for (const c of allCats) cats[c] = 0;
-                  players[nm] = { bets: 0, cats, kk: 0, usdt: 0, cny: 0, profit: 0 };
+                  players[nm] = { bets: 0, cats, kk: 0, usdt: 0, cny: 0, winU: 0, lossU: 0 };
                 }
                 const p = players[nm]; p.bets++;
                 const cat = betCat(b.direction);
-                if (p.cats[cat] !== undefined) p.cats[cat]++;
                 const amtUSD = b.currency === "kk" ? b.amount / 100000 : b.currency === "usdt" ? b.amount : b.amount / 6.7;
+                if (p.cats[cat] !== undefined) p.cats[cat] += amtUSD; // 累加金额(USD)而非次数
                 if (b.currency === "kk") p.kk += b.amount;
                 else if (b.currency === "usdt") p.usdt += b.amount;
                 else p.cny += b.amount;
@@ -2233,13 +2233,12 @@ export default function AdminPage() {
                       if (payoutAmt && payoutAmt > 0) {
                         const totalBet = dirTotals.get(pk) ?? amtUSD;
                         const payoutRatio = payoutAmt / totalBet;
-                        p.profit += amtUSD * (payoutRatio - 1);
+                        p.winU += amtUSD * payoutRatio;
                       } else {
-                        // 无赔付数据时用标准赔率估算
-                        p.profit += amtUSD * (getOdds(b.direction) - 1);
+                        p.winU += amtUSD * getOdds(b.direction);
                       }
                     } else {
-                      p.profit -= amtUSD;
+                      p.lossU += amtUSD;
                     }
                   }
                 }
@@ -2281,7 +2280,8 @@ export default function AdminPage() {
                           <th className="text-right py-2 px-1.5 whitespace-nowrap border-l border-[#2a3050] text-yellow-300 font-semibold text-xs">KK</th>
                           <th className="text-right py-2 px-1.5 whitespace-nowrap text-emerald-300 font-semibold text-xs">U</th>
                            <th className="text-right py-2 px-1.5 whitespace-nowrap text-blue-300 font-semibold text-xs">CNY</th>
-                           <th className="text-right py-2 px-1.5 whitespace-nowrap font-semibold text-xs text-emerald-300">盈利≈U</th>
+                           <th className="text-right py-2 px-1.5 whitespace-nowrap font-semibold text-xs text-green-300">赢≈U</th>
+                            <th className="text-right py-2 px-1.5 whitespace-nowrap font-semibold text-xs text-red-300">输≈U</th>
                         </tr>
                         <tr className="bg-[#161929] border-b border-[#252a3d]">
                           <th className="text-left py-1 px-2 sticky left-0 z-30 bg-[#161929]"></th>
@@ -2301,14 +2301,13 @@ export default function AdminPage() {
                             <td className="py-1.5 px-2 text-white text-xs font-semibold whitespace-nowrap sticky left-0 z-10" style={{ background: idx % 2 === 0 ? "#161929" : "#1a1e30" }}>{name}</td>
                             <td className="py-1.5 px-1.5 text-right text-slate-300 text-xs">{p.bets}</td>
                             {Object.values(grp).flat().map(c => (
-                              <td key={c} className={`py-1.5 px-0.5 text-right text-xs font-mono ${p.cats[c] > 0 ? "text-white" : "text-slate-700"}`}>{p.cats[c] > 0 ? p.cats[c] : "—"}</td>
+                              <td key={c} className={`py-1.5 px-0.5 text-right text-xs font-mono ${p.cats[c] > 0 ? "text-white" : "text-slate-700"}`}>{p.cats[c] > 0 ? p.cats[c].toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "—"}</td>
                             ))}
                             <td className="py-1.5 px-1.5 text-right text-yellow-400 font-mono text-xs whitespace-nowrap border-l border-[#1e2340]">{fmt(p.kk)}</td>
                             <td className="py-1.5 px-1.5 text-right text-emerald-400 font-mono text-xs whitespace-nowrap">{p.usdt > 0 ? p.usdt.toLocaleString("zh-CN", { maximumFractionDigits: 2 }) : "—"}</td>
                             <td className="py-1.5 px-1.5 text-right text-blue-400 font-mono text-xs whitespace-nowrap">{p.cny > 0 ? p.cny.toLocaleString("zh-CN", { maximumFractionDigits: 2 }) : "—"}</td>
-                            <td className={`py-1.5 px-1.5 text-right font-mono text-xs font-bold ${p.profit > 0 ? "text-green-400" : p.profit < 0 ? "text-red-400" : "text-slate-500"}`}>
-                              {p.profit !== 0 ? (p.profit > 0 ? "+" : "") + p.profit.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "—"}
-                            </td>
+                            <td className="py-1.5 px-1.5 text-right text-green-400 font-mono text-xs font-bold">{p.winU > 0 ? "+" + p.winU.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "—"}</td>
+                            <td className="py-1.5 px-1.5 text-right text-red-400 font-mono text-xs font-bold">{p.lossU > 0 ? "-" + p.lossU.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "—"}</td>
                           </tr>
                         ))}
                       </tbody>
