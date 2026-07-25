@@ -2200,59 +2200,71 @@ export default function AdminPage() {
               }
               const sorted = Object.entries(players).sort((a, b) => b[1].kk + b[1].usdt + b[1].cny - (a[1].kk + a[1].usdt + a[1].cny));
               const fmt = (n: number) => n > 0 ? n.toLocaleString("zh-CN", { maximumFractionDigits: 0 }) : "—";
+              const [hashFull, setHashFull] = useState(false);
               const grp: Record<string, string[]> = {
                 "大小单双": ["大","小","单","双"],
                 "组合": ["大单","大双","小单","小双"],
                 "数字": Array.from({ length: 28 }, (_, i) => String(i)),
                 "特殊": ["豹子","顺子","对子","极大","极小"],
               };
+              const grpClr: Record<string, string> = {
+                "大小单双": "bg-red-500/10 text-red-300",
+                "组合": "bg-amber-500/10 text-amber-300",
+                "数字": "bg-blue-500/10 text-blue-300",
+                "特殊": "bg-purple-500/10 text-purple-300",
+              };
               return (
-                <div className="bg-[#161929] border border-[#252a3d] rounded-2xl overflow-hidden">
-                  <div className="px-4 py-3 border-b border-[#252a3d] flex items-center justify-between">
+                <div className={`bg-[#161929] border border-[#252a3d] rounded-2xl overflow-hidden ${hashFull ? "fixed inset-4 z-50 flex flex-col shadow-2xl" : ""}`}>
+                  <div className="px-4 py-3 border-b border-[#252a3d] flex items-center justify-between flex-shrink-0">
                     <span className="text-white font-semibold text-sm">玩家输赢</span>
-                    <span className="text-xs text-slate-500">{sorted.length} 人 / 每期明细保留30期自动清除</span>
+                    <div className="flex items-center gap-3">
+                      <span className="text-[10px] text-slate-500">{sorted.length} 人</span>
+                      <button onClick={() => setHashFull(v => !v)} className="text-xs text-blue-400 hover:text-blue-300 transition-colors px-2 py-0.5 rounded border border-blue-500/30">
+                        {hashFull ? "还原" : "全屏"}
+                      </button>
+                    </div>
                   </div>
-                  <div className="overflow-x-auto" style={{ maxHeight: "70vh" }}>
-                    <table className="w-full text-xs">
-                      <thead className="sticky top-0 bg-[#161929] z-20">
-                        <tr className="text-slate-500 border-b border-[#252a3d]">
-                          <th className="text-left py-2 px-2 whitespace-nowrap sticky left-0 bg-[#161929] z-10">玩家</th>
-                          <th className="text-right py-2 px-1 whitespace-nowrap">注数</th>
+                  <div className={`overflow-auto ${hashFull ? "flex-1" : ""}`} style={hashFull ? {} : { maxHeight: "70vh" }}>
+                    <table className="w-full text-[11px]">
+                      <thead className="sticky top-0 z-20">
+                        <tr className="bg-[#1a1f35] border-b border-[#252a3d]">
+                          <th className="text-left py-2 px-2 whitespace-nowrap sticky left-0 z-30 bg-[#1a1f35] text-white font-semibold text-xs min-w-[80px]">玩家</th>
+                          <th className="text-right py-2 px-1.5 whitespace-nowrap text-slate-300 font-semibold text-xs min-w-[36px]">注数</th>
                           {Object.entries(grp).map(([g, cats]) => (
-                            <th key={g} colSpan={cats.length} className="text-center py-2 px-0.5 whitespace-nowrap border-l border-[#252a3d] text-slate-400">{g}</th>
+                            <th key={g} colSpan={cats.length} className={`text-center py-1.5 px-0.5 whitespace-nowrap border-l border-[#2a3050] text-xs font-semibold ${grpClr[g]}`}>{g}</th>
                           ))}
-                          <th className="text-right py-2 px-1 whitespace-nowrap border-l border-[#252a3d]">下注KK</th>
-                          <th className="text-right py-2 px-1 whitespace-nowrap">下注U</th>
-                          <th className="text-right py-2 px-1 whitespace-nowrap">下注CNY</th>
-                          <th className="text-right py-2 px-1 whitespace-nowrap text-green-400">赢</th>
-                          <th className="text-right py-2 px-1 whitespace-nowrap text-red-400">输</th>
+                          <th className="text-right py-2 px-1.5 whitespace-nowrap border-l border-[#2a3050] text-yellow-300 font-semibold text-xs">KK</th>
+                          <th className="text-right py-2 px-1.5 whitespace-nowrap text-emerald-300 font-semibold text-xs">U</th>
+                          <th className="text-right py-2 px-1.5 whitespace-nowrap text-blue-300 font-semibold text-xs">CNY</th>
+                          <th className="text-right py-2 px-1.5 whitespace-nowrap text-green-300 font-semibold text-xs">赢</th>
+                          <th className="text-right py-2 px-1.5 whitespace-nowrap text-red-300 font-semibold text-xs">输</th>
                         </tr>
-                        <tr className="text-slate-600 border-b border-[#252a3d]">
-                          <th className="text-left py-1 px-2 sticky left-0 bg-[#161929]"></th>
-                          <th className="text-right py-1 px-1"></th>
+                        <tr className="bg-[#161929] border-b border-[#252a3d]">
+                          <th className="text-left py-1 px-2 sticky left-0 z-30 bg-[#161929]"></th>
+                          <th className="text-right py-1 px-1.5"></th>
                           {Object.values(grp).flat().map(c => (
-                            <th key={c} className="text-center py-1 px-0.5 font-normal text-[10px]">{c}</th>
+                            <th key={c} className={`text-center py-1 px-0.5 font-normal text-[10px] border-l border-[#1e2340] ${/^\d+$/.test(c) ? "text-slate-500" : "text-slate-400"}`}>{c}</th>
                           ))}
-                          <th className="text-right py-1 px-1 border-l border-[#252a3d]"></th>
-                          <th className="text-right py-1 px-1"></th>
-                          <th className="text-right py-1 px-1"></th>
-                          <th className="text-right py-1 px-1"></th>
-                          <th className="text-right py-1 px-1"></th>
+                          <th className="text-right py-1 px-1.5 border-l border-[#1e2340]"></th>
+                          <th className="text-right py-1 px-1.5"></th>
+                          <th className="text-right py-1 px-1.5"></th>
+                          <th className="text-right py-1 px-1.5"></th>
+                          <th className="text-right py-1 px-1.5"></th>
                         </tr>
                       </thead>
                       <tbody>
-                        {sorted.map(([name, p]) => (
-                          <tr key={name} className="border-b border-[#252a3d]/50 hover:bg-white/5">
-                            <td className="py-2 px-2 text-white font-semibold whitespace-nowrap sticky left-0 bg-[#161929]">{name}</td>
-                            <td className="py-2 px-1 text-right text-slate-300">{p.bets}</td>
+                        {sorted.map(([name, p], idx) => (
+                          <tr key={name} className={`border-b border-[#1e2240] transition-colors ${idx % 2 === 0 ? "bg-[#161929]" : "bg-[#1a1e30]"}`}>
+                            <td className="py-1.5 px-2 text-white text-xs font-semibold whitespace-nowrap sticky left-0 z-10" style={{ background: idx % 2 === 0 ? "#161929" : "#1a1e30" }}>{name}</td>
+                            <td className="py-1.5 px-1.5 text-right text-slate-300 text-xs">{p.bets}</td>
                             {Object.values(grp).flat().map(c => (
-                              <td key={c} className="py-2 px-0.5 text-right text-slate-400 font-mono">{p.cats[c] || "—"}</td>
+                              <td key={c} className={`py-1.5 px-0.5 text-right text-xs font-mono ${p.cats[c] > 0 ? "text-white" : "text-slate-700"}`}>{p.cats[c] > 0 ? p.cats[c] : "—"}</td>
                             ))}
-                            <td className="py-2 px-1 text-right text-yellow-400 font-mono whitespace-nowrap border-l border-[#252a3d]">{fmt(p.kk)}</td>
-                            <td className="py-2 px-1 text-right text-emerald-400 font-mono whitespace-nowrap">{p.usdt > 0 ? p.usdt.toLocaleString("zh-CN", { maximumFractionDigits: 2 }) : "—"}</td>
-                            <td className="py-2 px-1 text-right text-blue-400 font-mono whitespace-nowrap">{p.cny > 0 ? p.cny.toLocaleString("zh-CN", { maximumFractionDigits: 2 }) : "—"}</td>
-                            <td className="py-2 px-1 text-right text-green-400 font-mono">{p.wins || "—"}</td>
-                            <td className="py-2 px-1 text-right text-red-400 font-mono">{p.losses || "—"}</td>
+                            <td className="py-1.5 px-1.5 text-right text-yellow-400 font-mono text-xs whitespace-nowrap border-l border-[#1e2340]">{fmt(p.kk)}</td>
+                            <td className="py-1.5 px-1.5 text-right text-emerald-400 font-mono text-xs whitespace-nowrap">{p.usdt > 0 ? p.usdt.toLocaleString("zh-CN", { maximumFractionDigits: 2 }) : "—"}</td>
+                            <td className="py-1.5 px-1.5 text-right text-blue-400 font-mono text-xs whitespace-nowrap">{p.cny > 0 ? p.cny.toLocaleString("zh-CN", { maximumFractionDigits: 2 }) : "—"}</td>
+                            <td className="py-1.5 px-1.5 text-right text-green-400 font-mono text-xs">{p.wins || "—"}</td>
+                            <td className="py-1.5 px-1.5 text-right text-red-400 font-mono text-xs">{p.losses || "—"}</td>
                           </tr>
                         ))}
                       </tbody>
