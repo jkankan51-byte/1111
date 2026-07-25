@@ -237,6 +237,8 @@ export default function AdminPage() {
   const [hashPayouts, setHashPayouts] = useState<Map<string, number>>(new Map());
   // 玩家输赢全屏切换
   const [hashFull, setHashFull] = useState(false);
+  // 封盘推荐
+  const [closingRec, setClosingRec] = useState<{ emptyNums: number[] | null; leastDirs: string[]; term: number | null } | null>(null);
   type PeriodRecord = {
     term: number | null;
     result: string | null;
@@ -608,6 +610,8 @@ export default function AdminPage() {
               }
               setHashPayouts(pm);
             }
+          } else if (ev.type === "closing:recommend") {
+            setClosingRec({ emptyNums: ev.emptyNums as number[] | null, leastDirs: ev.leastDirs as string[], term: ev.term as number | null });
           }
         } catch { /* ignore */ }
       };
@@ -2167,6 +2171,38 @@ export default function AdminPage() {
               </div>
             )}
 
+            {/* 封盘推荐 */}
+            {closingRec && (
+              <div className="bg-[#161929] border border-[#252a3d] rounded-2xl p-4 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-white font-semibold text-sm">⏰ 封盘推荐 #{closingRec.term ?? "?"}</span>
+                  <button onClick={() => setClosingRec(null)} className="text-slate-500 text-xs hover:text-white">×</button>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="bg-[#1a1e30] rounded-xl p-3">
+                    <div className="text-xs text-amber-400 font-semibold mb-1.5">无人下注的数字</div>
+                    {closingRec.emptyNums && closingRec.emptyNums.length > 0 ? (
+                      <div className="flex flex-wrap gap-1">
+                        {closingRec.emptyNums.map(n => (
+                          <span key={n} className="text-white font-mono text-xs bg-[#0d1117] rounded px-2 py-0.5">{n}</span>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="text-slate-500 text-xs">全部数字都有人下注</span>
+                    )}
+                  </div>
+                  <div className="bg-[#1a1e30] rounded-xl p-3">
+                    <div className="text-xs text-blue-400 font-semibold mb-1.5">下注最少的方向</div>
+                    <div className="flex flex-wrap gap-1">
+                      {closingRec.leastDirs.map((d, i) => (
+                        <span key={i} className="text-white font-mono text-xs bg-[#0d1117] rounded px-2 py-0.5">{d}</span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* 本期玩家输赢统计（仅当前期数据） */}
             {hashBets.length > 0 && hashTerm !== null && (() => {
               const currentBets = hashBets.filter(b => b.termContext === hashTerm);
@@ -2325,7 +2361,7 @@ export default function AdminPage() {
 
             {/* 玩家下注历史（所有期累计） */}
             {hashBets.length > 0 && (() => {
-              type HRec = { bets: number; amtU: number; wins: number; losses: number; winU: number; lossU: number };
+              type HRec = { bets: number; amtU: number; wins: number; losses: number; winU: number; lossU: number; grp: string };
               const hist: Record<string, Record<string, HRec>> = {};
               const termResult = new Map<number, string>();
               for (const h of hashHistory) if (h.term != null && h.result) termResult.set(h.term, h.result);
@@ -2342,9 +2378,10 @@ export default function AdminPage() {
                 const nm = b.senderName || b.senderId || "未知";
                 if (!hist[nm]) hist[nm] = {};
                 const dir = b.direction;
-                if (!hist[nm][dir]) hist[nm][dir] = { bets: 0, amtU: 0, wins: 0, losses: 0, winU: 0, lossU: 0 };
+                if (!hist[nm][dir]) hist[nm][dir] = { bets: 0, amtU: 0, wins: 0, losses: 0, winU: 0, lossU: 0, grp: "" };
                 const h = hist[nm][dir];
                 h.bets++;
+                if (b.groupTitle) h.grp = b.groupTitle;
                 const amtU = b.currency === "kk" ? b.amount / 100000 : b.currency === "usdt" ? b.amount : b.amount / 6.7;
                 h.amtU += amtU;
                 if (b.termContext != null) {
@@ -2355,7 +2392,7 @@ export default function AdminPage() {
                   }
                 }
               }
-              const flat: { name: string; dir: string; bets: number; amtU: number; wins: number; losses: number; winU: number; lossU: number }[] = [];
+              const flat: { name: string; dir: string; bets: number; amtU: number; wins: number; losses: number; winU: number; lossU: number; grp: string }[] = [];
               for (const [name, dirs] of Object.entries(hist)) {
                 for (const [dir, h] of Object.entries(dirs)) {
                   flat.push({ name, dir, ...h });
@@ -2373,6 +2410,7 @@ export default function AdminPage() {
                       <thead className="sticky top-0 bg-[#1a1f35] z-10">
                         <tr className="text-slate-500 border-b border-[#252a3d]">
                           <th className="text-left py-2 px-2 whitespace-nowrap">玩家</th>
+                          <th className="text-left py-2 px-1 whitespace-nowrap">群组</th>
                           <th className="text-left py-2 px-1 whitespace-nowrap">方向</th>
                           <th className="text-right py-2 px-1 whitespace-nowrap">注数</th>
                           <th className="text-right py-2 px-1 whitespace-nowrap">总下注≈U</th>
@@ -2388,6 +2426,7 @@ export default function AdminPage() {
                             <td className="py-1.5 px-2 text-white font-semibold whitespace-nowrap max-w-[80px] overflow-hidden text-ellipsis" title={r.name}>
                               {r.name.length > 6 ? r.name.slice(0, 6) + "…" : r.name}
                             </td>
+                            <td className="py-1.5 px-1 text-slate-500 max-w-[60px] overflow-hidden text-ellipsis whitespace-nowrap" title={r.grp}>{r.grp || "—"}</td>
                             <td className="py-1.5 px-1 text-slate-300">{r.dir}</td>
                             <td className="py-1.5 px-1 text-right text-slate-300">{r.bets}</td>
                             <td className="py-1.5 px-1 text-right text-white font-mono">{r.amtU.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
