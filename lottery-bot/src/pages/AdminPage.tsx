@@ -2232,190 +2232,92 @@ export default function AdminPage() {
               })()}
             </div>
 
-            {/* 方向统计 */}
-            {hashBets.length > 0 && (() => {
-              const isNum = (s: string) => /^\d+$/.test(s);
-              const z = () => ({ kk: 0, usdt: 0, cny: 0 });
-              const allDirs = ["大单", "大双", "大", "小单", "小双", "小", "单", "双", "其他"] as const;
-              const dirm: Record<string, { kk: number; usdt: number; cny: number }> = Object.fromEntries(allDirs.map(d => [d, z()]));
-              for (const b of hashBets) {
-                const d = b.direction;
-                if (d === "大单" || d === "大双" || d === "大" || d === "小单" || d === "小双" || d === "小" || d === "单" || d === "双") {
-                  dirm[d][b.currency] += b.amount;
-                } else if (isNum(d)) {
-                  dirm["其他"][b.currency] += b.amount;
-                }
-              }
-              const sumKK = (ds: string[]) => ds.reduce((s, d) => s + dirm[d].kk, 0);
-              const sumUSDT = (ds: string[]) => ds.reduce((s, d) => s + dirm[d].usdt, 0);
-              const sumCNY = (ds: string[]) => ds.reduce((s, d) => s + dirm[d].cny, 0);
-              const big = ["大", "大单", "大双"];
-              const small = ["小", "小单", "小双"];
-              const bigCur = { kk: sumKK(big), usdt: sumUSDT(big), cny: sumCNY(big) };
-              const smlCur = { kk: sumKK(small), usdt: sumUSDT(small), cny: sumCNY(small) };
-              const bigTotal = bigCur.kk + bigCur.usdt + bigCur.cny;
-              const smlTotal = smlCur.kk + smlCur.usdt + smlCur.cny;
-              const grandTotal = bigTotal + smlTotal;
-              const grandAll = grandTotal + sumKK(["单", "双", "其他"]) + sumUSDT(["单", "双", "其他"]) + sumCNY(["单", "双", "其他"]);
-              const pct = (n: number) => grandAll > 0 ? Math.round(n / grandAll * 100) : 0;
-              const fmt = (n: number) => n > 0 ? n.toLocaleString("zh-CN", { maximumFractionDigits: 0 }) : "";
-              const toU = (c: { kk: number; usdt: number; cny: number }) => c.kk / 100000 + c.usdt + c.cny / 6.7;
-              const fU = (u: number) => u.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-              const sumA = (d: string) => dirm[d].kk + dirm[d].usdt + dirm[d].cny;
-              const CurLines = ({ c }: { c: { kk: number; usdt: number; cny: number } }) => {
-                const u = toU(c);
-                return (
-                  <div className="space-y-1 mt-1.5">
-                    {(["kk", "usdt", "cny"] as const).map(cur => c[cur] > 0 ? (
-                      <div key={cur} className="flex items-center justify-between gap-2 text-sm">
-                        <span className={`${cur === "kk" ? "text-yellow-400" : cur === "usdt" ? "text-emerald-400" : "text-blue-400"} font-semibold`}>{cur === "kk" ? "KK" : cur.toUpperCase()}</span>
-                        <span className="text-white font-mono">{fmt(c[cur])}</span>
-                      </div>
-                    ) : null)}
-                    {u > 0 && (
-                      <div className="flex items-center justify-between gap-2 text-sm border-t border-emerald-500/20 pt-1 mt-1">
-                        <span className="text-emerald-400/70 font-semibold">≈ U</span>
-                        <span className="text-emerald-300 font-mono font-bold">{fU(u)}</span>
-                      </div>
-                    )}
-                  </div>
-                );
-              };
-              const clr: Record<string, { border: string; bg: string; tx: string }> = {
-                "大单": { border: "border-red-500/20", bg: "bg-red-500/5", tx: "text-red-400" },
-                "大双": { border: "border-red-500/20", bg: "bg-red-500/5", tx: "text-red-400" },
-                "大":   { border: "border-red-500/20", bg: "bg-red-500/5", tx: "text-red-400" },
-                "小单": { border: "border-sky-500/20", bg: "bg-sky-500/5", tx: "text-sky-400" },
-                "小双": { border: "border-sky-500/20", bg: "bg-sky-500/5", tx: "text-sky-400" },
-                "小":   { border: "border-sky-500/20", bg: "bg-sky-500/5", tx: "text-sky-400" },
-                "单":   { border: "border-purple-500/20", bg: "bg-purple-500/5", tx: "text-purple-400" },
-                "双":   { border: "border-teal-500/20", bg: "bg-teal-500/5", tx: "text-teal-400" },
-                "其他": { border: "border-slate-500/20", bg: "bg-slate-500/5", tx: "text-slate-400" },
-              };
-              return (
-                <div className="bg-[#161929] border border-[#252a3d] rounded-2xl p-4 space-y-3">
-                  <span className="text-white font-semibold text-sm">方向统计</span>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="rounded-xl border border-red-500/30 bg-red-500/5 px-3 py-2.5">
-                      <div className="text-xs text-red-400 font-semibold text-center">🔴 大（合计）</div>
-                      <div className="text-red-300 font-bold text-2xl text-center">{pct(bigTotal)}%</div>
-                      <CurLines c={bigCur} />
-                    </div>
-                    <div className="rounded-xl border border-sky-500/30 bg-sky-500/5 px-3 py-2.5">
-                      <div className="text-xs text-sky-400 font-semibold text-center">🔵 小（合计）</div>
-                      <div className="text-sky-300 font-bold text-2xl text-center">{pct(smlTotal)}%</div>
-                      <CurLines c={smlCur} />
-                    </div>
-                  </div>
-                  {grandAll > 0 && (
-                    <div className="h-1.5 rounded-full bg-sky-500/30 overflow-hidden">
-                      <div className="h-full rounded-full bg-red-500/70 transition-all duration-300" style={{ width: `${pct(grandTotal)}%` }} />
-                    </div>
-                  )}
-                  <div className="grid grid-cols-3 gap-1.5">
-                    {allDirs.map(d => {
-                      const c = clr[d];
-                      return (
-                        <div key={d} className={`rounded-lg border ${c.border} ${c.bg} px-2.5 py-2`}>
-                          <div className={`text-sm font-semibold text-center mb-1.5 ${c.tx}`}>{d}</div>
-                          {(["kk", "usdt", "cny"] as const).map(cur => dirm[d][cur] > 0 ? (
-                            <div key={cur} className="flex items-center justify-between text-xs">
-                              <span className={`${cur === "kk" ? "text-yellow-400" : cur === "usdt" ? "text-emerald-400" : "text-blue-400"} font-semibold`}>{cur === "kk" ? "KK" : cur.toUpperCase()}</span>
-                              <span className="text-white font-mono">{fmt(dirm[d][cur])}</span>
-                            </div>
-                          ) : null)}
-                          {toU(dirm[d]) > 0 && (
-                            <div className="flex items-center justify-between text-xs border-t border-emerald-500/20 pt-1 mt-1">
-                              <span className="text-emerald-400/70 font-semibold">≈ U</span>
-                              <span className="text-emerald-300 font-mono font-bold">{fU(toU(dirm[d]))}</span>
-                            </div>
-                          )}
-                          {sumA(d) === 0 && <div className="text-slate-700 text-[10px] text-center">—</div>}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            })()}
-
             {/* 玩家输赢统计 */}
             {hashBets.length > 0 && (() => {
-              // 建立期号→开奖结果映射
+              // 下注分类
+              const betCat = (dir: string): string => {
+                if (dir === "大" || dir === "小" || dir === "单" || dir === "双") return "大小单双";
+                if (dir === "大单" || dir === "大双" || dir === "小单" || dir === "小双") return "大单大双小单小双";
+                if (/^\d+$/.test(dir)) return "数字0-27";
+                if (dir === "豹子" || dir === "顺子" || dir === "对子") return "豹子顺子对子";
+                if (dir === "极大" || dir === "极小") return "极大极小";
+                return "其他";
+              };
+              const catKeys = ["大小单双", "大单大双小单小双", "数字0-27", "豹子顺子对子", "极大极小"] as const;
+              // 期号→结果映射
               const termResult = new Map<number, string>();
               for (const h of hashHistory) {
                 if (h.term != null && h.result) termResult.set(h.term, h.result);
               }
-              // 判断方向是否命中结果
               const isWin = (dir: string, result: string): boolean => {
-                if (result.startsWith("大") || result.startsWith("小")) {
-                  if (dir === result) return true;
-                  if (dir === "大" && result.startsWith("大")) return true;
-                  if (dir === "小" && result.startsWith("小")) return true;
-                  if (dir === "单" && result.endsWith("单")) return true;
-                  if (dir === "双" && result.endsWith("双")) return true;
-                  if (dir === "大单" && result === "大单") return true;
-                  if (dir === "大双" && result === "大双") return true;
-                  if (dir === "小单" && result === "小单") return true;
-                  if (dir === "小双" && result === "小双") return true;
-                }
+                if (!result) return false;
+                if (dir === result) return true;
+                if (dir === "大" && result.startsWith("大")) return true;
+                if (dir === "小" && result.startsWith("小")) return true;
+                if (dir === "单" && result.endsWith("单")) return true;
+                if (dir === "双" && result.endsWith("双")) return true;
                 return false;
               };
               // 按玩家聚合
-              const players: Record<string, { bets: number; kk: number; usdt: number; cny: number; wins: number; losses: number; winKK: number; winUsdt: number; winCny: number; lossKK: number; lossUsdt: number; lossCny: number }> = {};
+              const players: Record<string, {
+                bets: number; cats: Record<string, number>;
+                kk: number; usdt: number; cny: number;
+                wins: number; losses: number;
+              }> = {};
               for (const b of hashBets) {
                 const nm = b.senderName || b.senderId || "未知";
-                if (!players[nm]) players[nm] = { bets: 0, kk: 0, usdt: 0, cny: 0, wins: 0, losses: 0, winKK: 0, winUsdt: 0, winCny: 0, lossKK: 0, lossUsdt: 0, lossCny: 0 };
+                if (!players[nm]) {
+                  players[nm] = { bets: 0, cats: {}, kk: 0, usdt: 0, cny: 0, wins: 0, losses: 0 };
+                  for (const k of catKeys) players[nm].cats[k] = 0;
+                }
                 const p = players[nm];
                 p.bets++;
+                const cat = betCat(b.direction);
+                if (p.cats[cat] !== undefined) p.cats[cat]++;
                 if (b.currency === "kk") p.kk += b.amount;
                 else if (b.currency === "usdt") p.usdt += b.amount;
                 else p.cny += b.amount;
-                // 判断输赢
                 if (b.termContext != null) {
                   const result = termResult.get(b.termContext);
                   if (result) {
-                    if (isWin(b.direction, result)) {
-                      p.wins++;
-                      if (b.currency === "kk") p.winKK += b.amount;
-                      else if (b.currency === "usdt") p.winUsdt += b.amount;
-                      else p.winCny += b.amount;
-                    } else {
-                      p.losses++;
-                      if (b.currency === "kk") p.lossKK += b.amount;
-                      else if (b.currency === "usdt") p.lossUsdt += b.amount;
-                      else p.lossCny += b.amount;
-                    }
+                    if (isWin(b.direction, result)) p.wins++;
+                    else p.losses++;
                   }
                 }
               }
               const sorted = Object.entries(players).sort((a, b) => b[1].kk + b[1].usdt + b[1].cny - (a[1].kk + a[1].usdt + a[1].cny));
+              const fmt = (n: number) => n > 0 ? n.toLocaleString("zh-CN", { maximumFractionDigits: 0 }) : "—";
               return (
-                <div className="bg-[#161929] border border-[#252a3d] rounded-2xl p-4 space-y-3">
-                  <span className="text-white font-semibold text-sm">玩家输赢</span>
+                <div className="bg-[#161929] border border-[#252a3d] rounded-2xl overflow-hidden">
+                  <div className="px-4 py-3 border-b border-[#252a3d] flex items-center justify-between">
+                    <span className="text-white font-semibold text-sm">玩家输赢</span>
+                    <span className="text-xs text-slate-500">{sorted.length} 人</span>
+                  </div>
                   <div className="overflow-x-auto">
                     <table className="w-full text-xs">
                       <thead>
                         <tr className="text-slate-500 border-b border-[#252a3d]">
-                          <th className="text-left py-2 pr-2">玩家</th>
-                          <th className="text-right py-2 px-1">注数</th>
-                          <th className="text-right py-2 px-1">下注KK</th>
-                          <th className="text-right py-2 px-1">下注U</th>
-                          <th className="text-right py-2 px-1">下注CNY</th>
-                          <th className="text-right py-2 px-1">赢</th>
-                          <th className="text-right py-2 px-1">输</th>
+                          <th className="text-left py-2 px-2 whitespace-nowrap">玩家</th>
+                          <th className="text-right py-2 px-1 whitespace-nowrap">注数</th>
+                          {catKeys.map(k => <th key={k} className="text-right py-2 px-1 whitespace-nowrap text-slate-500">{k}</th>)}
+                          <th className="text-right py-2 px-1 whitespace-nowrap">下注KK</th>
+                          <th className="text-right py-2 px-1 whitespace-nowrap">下注U</th>
+                          <th className="text-right py-2 px-1 whitespace-nowrap">下注CNY</th>
+                          <th className="text-right py-2 px-1 whitespace-nowrap text-green-400">赢</th>
+                          <th className="text-right py-2 px-1 whitespace-nowrap text-red-400">输</th>
                         </tr>
                       </thead>
                       <tbody>
                         {sorted.map(([name, p]) => (
                           <tr key={name} className="border-b border-[#252a3d]/50 hover:bg-white/5">
-                            <td className="py-2 pr-2 text-white font-semibold">{name}</td>
+                            <td className="py-2 px-2 text-white font-semibold whitespace-nowrap">{name}</td>
                             <td className="py-2 px-1 text-right text-slate-300">{p.bets}</td>
-                            <td className="py-2 px-1 text-right text-yellow-400 font-mono">{p.kk > 0 ? p.kk.toLocaleString("zh-CN", { maximumFractionDigits: 0 }) : "—"}</td>
-                            <td className="py-2 px-1 text-right text-emerald-400 font-mono">{p.usdt > 0 ? p.usdt.toLocaleString("zh-CN", { maximumFractionDigits: 2 }) : "—"}</td>
-                            <td className="py-2 px-1 text-right text-blue-400 font-mono">{p.cny > 0 ? p.cny.toLocaleString("zh-CN", { maximumFractionDigits: 2 }) : "—"}</td>
-                            <td className="py-2 px-1 text-right text-green-400 font-mono">{p.wins}</td>
-                            <td className="py-2 px-1 text-right text-red-400 font-mono">{p.losses}</td>
+                            {catKeys.map(k => <td key={k} className="py-2 px-1 text-right text-slate-400 font-mono">{p.cats[k] || "—"}</td>)}
+                            <td className="py-2 px-1 text-right text-yellow-400 font-mono whitespace-nowrap">{fmt(p.kk)}</td>
+                            <td className="py-2 px-1 text-right text-emerald-400 font-mono whitespace-nowrap">{p.usdt > 0 ? p.usdt.toLocaleString("zh-CN", { maximumFractionDigits: 2 }) : "—"}</td>
+                            <td className="py-2 px-1 text-right text-blue-400 font-mono whitespace-nowrap">{p.cny > 0 ? p.cny.toLocaleString("zh-CN", { maximumFractionDigits: 2 }) : "—"}</td>
+                            <td className="py-2 px-1 text-right text-green-400 font-mono">{p.wins || "—"}</td>
+                            <td className="py-2 px-1 text-right text-red-400 font-mono">{p.losses || "—"}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -2424,6 +2326,7 @@ export default function AdminPage() {
                 </div>
               );
             })()}
+
 
             {/* 开奖历史 */}
             {(() => {
