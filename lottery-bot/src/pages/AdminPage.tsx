@@ -2167,8 +2167,10 @@ export default function AdminPage() {
               </div>
             )}
 
-            {/* 玩家输赢统计 — 按实际赔率计算盈利 */}
-            {hashBets.length > 0 && (() => {
+            {/* 本期玩家输赢统计（仅当前期数据） */}
+            {hashBets.length > 0 && hashTerm !== null && (() => {
+              const currentBets = hashBets.filter(b => b.termContext === hashTerm);
+              if (currentBets.length === 0) return null;
               const getOdds = (dir: string): number => {
                 if (dir === "大" || dir === "小" || dir === "单" || dir === "双") return 1.98;
                 if (dir === "大单" || dir === "大双" || dir === "小单" || dir === "小双") return 3.8;
@@ -2201,14 +2203,14 @@ export default function AdminPage() {
               const players: Record<string, { bets: number; cats: Record<string, number>; kk: number; usdt: number; cny: number; winU: number; lossU: number }> = {};
               // 先统计每期每方向的总下注额（用于赔付比例计算）
               const dirTotals = new Map<string, number>();
-              for (const b of hashBets) {
+              for (const b of currentBets) {
                 if (b.termContext != null) {
                   const dk = `${b.termContext}:${b.direction}`;
                   const amtUSD = b.currency === "kk" ? b.amount / 100000 : b.currency === "usdt" ? b.amount : b.amount / 6.7;
                   dirTotals.set(dk, (dirTotals.get(dk) ?? 0) + amtUSD);
                 }
               }
-              for (const b of hashBets) {
+              for (const b of currentBets) {
                 const nm = b.senderName || b.senderId || "未知";
                 if (!players[nm]) {
                   const cats: Record<string, number> = {};
@@ -2296,9 +2298,11 @@ export default function AdminPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {sorted.map(([name, p], idx) => (
+                        {sorted.map(([name, p], idx) => {
+                          const shortName = name.length > 8 ? name.slice(0, 8) + "…" : name;
+                          return (
                           <tr key={name} className={`border-b border-[#1e2240] transition-colors ${idx % 2 === 0 ? "bg-[#161929]" : "bg-[#1a1e30]"}`}>
-                            <td className="py-1.5 px-2 text-white text-xs font-semibold whitespace-nowrap sticky left-0 z-10" style={{ background: idx % 2 === 0 ? "#161929" : "#1a1e30" }}>{name}</td>
+                            <td className="py-1.5 px-2 text-white text-xs font-semibold whitespace-nowrap sticky left-0 z-10 max-w-[100px] overflow-hidden text-ellipsis" style={{ background: idx % 2 === 0 ? "#161929" : "#1a1e30" }} title={name}>{shortName}</td>
                             <td className="py-1.5 px-1.5 text-right text-slate-300 text-xs">{p.bets}</td>
                             {Object.values(grp).flat().map(c => (
                               <td key={c} className={`py-1.5 px-0.5 text-right text-xs font-mono ${p.cats[c] > 0 ? "text-white" : "text-slate-700"}`}>{p.cats[c] > 0 ? p.cats[c].toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "—"}</td>
@@ -2308,6 +2312,88 @@ export default function AdminPage() {
                             <td className="py-1.5 px-1.5 text-right text-blue-400 font-mono text-xs whitespace-nowrap">{p.cny > 0 ? p.cny.toLocaleString("zh-CN", { maximumFractionDigits: 2 }) : "—"}</td>
                             <td className="py-1.5 px-1.5 text-right text-green-400 font-mono text-xs font-bold">{p.winU > 0 ? "+" + p.winU.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "—"}</td>
                             <td className="py-1.5 px-1.5 text-right text-red-400 font-mono text-xs font-bold">{p.lossU > 0 ? "-" + p.lossU.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "—"}</td>
+                          </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* 玩家下注历史（所有期累计） */}
+            {hashBets.length > 0 && (() => {
+              type HRec = { bets: number; amtU: number; wins: number; losses: number; winU: number; lossU: number };
+              const hist: Record<string, Record<string, HRec>> = {};
+              const termResult = new Map<number, string>();
+              for (const h of hashHistory) if (h.term != null && h.result) termResult.set(h.term, h.result);
+              const isWin = (dir: string, r: string): boolean => {
+                if (!r) return false;
+                if (dir === r) return true;
+                if (dir === "大" && r.startsWith("大")) return true;
+                if (dir === "小" && r.startsWith("小")) return true;
+                if (dir === "单" && r.endsWith("单")) return true;
+                if (dir === "双" && r.endsWith("双")) return true;
+                return false;
+              };
+              for (const b of hashBets) {
+                const nm = b.senderName || b.senderId || "未知";
+                if (!hist[nm]) hist[nm] = {};
+                const dir = b.direction;
+                if (!hist[nm][dir]) hist[nm][dir] = { bets: 0, amtU: 0, wins: 0, losses: 0, winU: 0, lossU: 0 };
+                const h = hist[nm][dir];
+                h.bets++;
+                const amtU = b.currency === "kk" ? b.amount / 100000 : b.currency === "usdt" ? b.amount : b.amount / 6.7;
+                h.amtU += amtU;
+                if (b.termContext != null) {
+                  const result = termResult.get(b.termContext);
+                  if (result) {
+                    if (isWin(b.direction, result)) { h.wins++; h.winU += amtU; }
+                    else { h.losses++; h.lossU += amtU; }
+                  }
+                }
+              }
+              const flat: { name: string; dir: string; bets: number; amtU: number; wins: number; losses: number; winU: number; lossU: number }[] = [];
+              for (const [name, dirs] of Object.entries(hist)) {
+                for (const [dir, h] of Object.entries(dirs)) {
+                  flat.push({ name, dir, ...h });
+                }
+              }
+              flat.sort((a, b) => b.amtU - a.amtU);
+              return (
+                <div className="bg-[#161929] border border-[#252a3d] rounded-2xl overflow-hidden">
+                  <div className="px-4 py-3 border-b border-[#252a3d] flex items-center justify-between">
+                    <span className="text-white font-semibold text-sm">玩家下注历史</span>
+                    <span className="text-xs text-slate-500">{flat.length} 条</span>
+                  </div>
+                  <div className="overflow-auto" style={{ maxHeight: "50vh" }}>
+                    <table className="w-full text-xs">
+                      <thead className="sticky top-0 bg-[#1a1f35] z-10">
+                        <tr className="text-slate-500 border-b border-[#252a3d]">
+                          <th className="text-left py-2 px-2 whitespace-nowrap">玩家</th>
+                          <th className="text-left py-2 px-1 whitespace-nowrap">方向</th>
+                          <th className="text-right py-2 px-1 whitespace-nowrap">注数</th>
+                          <th className="text-right py-2 px-1 whitespace-nowrap">总下注≈U</th>
+                          <th className="text-right py-2 px-1 whitespace-nowrap text-green-400">赢</th>
+                          <th className="text-right py-2 px-1 whitespace-nowrap text-red-400">输</th>
+                          <th className="text-right py-2 px-1 whitespace-nowrap">赢U</th>
+                          <th className="text-right py-2 px-1 whitespace-nowrap">输U</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {flat.map((r, idx) => (
+                          <tr key={`${r.name}-${r.dir}`} className={`border-b border-[#1e2240] ${idx % 2 === 0 ? "bg-[#161929]" : "bg-[#1a1e30]"}`}>
+                            <td className="py-1.5 px-2 text-white font-semibold whitespace-nowrap max-w-[80px] overflow-hidden text-ellipsis" title={r.name}>
+                              {r.name.length > 6 ? r.name.slice(0, 6) + "…" : r.name}
+                            </td>
+                            <td className="py-1.5 px-1 text-slate-300">{r.dir}</td>
+                            <td className="py-1.5 px-1 text-right text-slate-300">{r.bets}</td>
+                            <td className="py-1.5 px-1 text-right text-white font-mono">{r.amtU.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                            <td className="py-1.5 px-1 text-right text-green-400">{r.wins || "—"}</td>
+                            <td className="py-1.5 px-1 text-right text-red-400">{r.losses || "—"}</td>
+                            <td className="py-1.5 px-1 text-right text-green-400 font-mono">{r.winU > 0 ? "+" + r.winU.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "—"}</td>
+                            <td className="py-1.5 px-1 text-right text-red-400 font-mono">{r.lossU > 0 ? "-" + r.lossU.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "—"}</td>
                           </tr>
                         ))}
                       </tbody>
