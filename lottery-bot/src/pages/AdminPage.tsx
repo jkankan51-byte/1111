@@ -271,7 +271,6 @@ export default function AdminPage() {
   };
   const hashSseRef = useRef<EventSource | null>(null);
   const betBufferRef = useRef<GroupBetEntry[]>([]);
-  const resetPendingRef = useRef<{ bets: GroupBetEntry[]; period: string | null } | null>(null);
   const latestPeriodRef = useRef<string | null>(null);
   const latestTermRef = useRef<number | null>(null);
   const latestLastBetAtRef = useRef<number>(0);
@@ -536,7 +535,6 @@ export default function AdminPage() {
       return;
     }
     betBufferRef.current = [];
-    resetPendingRef.current = null;
 
     let destroyed = false;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -559,7 +557,6 @@ export default function AdminPage() {
           const ev = JSON.parse(e.data as string) as Record<string, unknown>;
           if (ev.type === "init") {
             betBufferRef.current = [];
-            resetPendingRef.current = null;
             setHashBets(((ev.bets as GroupBetEntry[]) ?? []).slice(0, ADMIN_BET_LIST_LIMIT));
             setHashPeriod((ev.period as string | null) ?? null);
             if (ev.term) setHashTerm(ev.term as number);
@@ -573,7 +570,6 @@ export default function AdminPage() {
             for (const b of bets) betBufferRef.current.push(b);
           } else if (ev.type === "bets:cleanup") {
             betBufferRef.current = [];
-            resetPendingRef.current = null;
             setHashPeriod((ev.period as string | null) ?? null);
             void fetch("/api/admin/hash-group-bets", { credentials: "include" })
               .then(r => r.ok ? r.json() : null)
@@ -585,8 +581,14 @@ export default function AdminPage() {
           } else if (ev.type === "bet:new") {
             betBufferRef.current.push(ev.bet as GroupBetEntry);
           } else if (ev.type === "bets:reset") {
-            betBufferRef.current = [];
-            latestTermRef.current = null;
+            // 追加不清除：保留所有期数据，仅更新期号/快照
+            const resetBets = (ev.bets as GroupBetEntry[]) ?? [];
+            for (const b of resetBets) {
+              // 去重：避免同一注单重复
+              if (!betBufferRef.current.some(x => x.id === b.id)) betBufferRef.current.push(b);
+            }
+            if (ev.period) latestPeriodRef.current = ev.period as string;
+            if (ev.term) latestTermRef.current = ev.term as number;
             if (ev.lastBetAt) {
               latestLastBetAtRef.current = ev.lastBetAt as number;
               setHashLastBetAt(ev.lastBetAt as number);
@@ -594,10 +596,6 @@ export default function AdminPage() {
             if (ev.term) setHashTerm(ev.term as number);
             if (ev.snap) setHashSnap(ev.snap as { term: number; dirs: Record<string, { kk: number; usdt: number; cny: number }>; closedAt: number });
             else setHashSnap(null);
-            resetPendingRef.current = {
-              bets: ((ev.bets as GroupBetEntry[]) ?? []).slice(0, ADMIN_BET_LIST_LIMIT),
-              period: (ev.period as string | null) ?? null,
-            };
           }
         } catch { /* ignore */ }
       };
@@ -614,9 +612,8 @@ export default function AdminPage() {
 
     // 每 1s flush 一次缓冲，多群消息合并为一次 setState
     const flushId = setInterval(() => {
-      const reset = resetPendingRef.current;
       const buf = betBufferRef.current;
-      if (reset === null && buf.length === 0) return;
+      if (buf.length === 0) return;
       betBufferRef.current = [];
 
       // 批量更新 period / term / lastBetAt
@@ -624,20 +621,8 @@ export default function AdminPage() {
       if (latestTermRef.current) { setHashTerm(latestTermRef.current); latestTermRef.current = null; }
       if (latestLastBetAtRef.current > 0) { setHashLastBetAt(latestLastBetAtRef.current); latestLastBetAtRef.current = 0; }
 
-      if (buf.length > 0) {
-        const newBets = [...buf].reverse();
-        if (reset !== null) {
-          resetPendingRef.current = null;
-          setHashBets([...reset.bets, ...newBets].slice(0, ADMIN_BET_LIST_LIMIT));
-          setHashPeriod(reset.period);
-        } else {
-          setHashBets(prev => [...newBets, ...prev].slice(0, ADMIN_BET_LIST_LIMIT));
-        }
-      } else if (reset !== null) {
-        resetPendingRef.current = null;
-        setHashBets(reset.bets.slice(0, ADMIN_BET_LIST_LIMIT));
-        setHashPeriod(reset.period);
-      }
+      const newBets = [...buf].reverse();
+      setHashBets(prev => [...newBets, ...prev].slice(0, ADMIN_BET_LIST_LIMIT));
     }, 1000);
 
     return () => {
@@ -2170,108 +2155,39 @@ export default function AdminPage() {
               </div>
             )}
 
-            {/* 期号 + 合计 */}
-            <div className="bg-[#161929] border border-[#252a3d] rounded-2xl p-4">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <span className="text-white font-semibold text-sm">🍁 加拿大下注实时监控</span>
-                  {/* 实时连接指示灯 */}
-                  <span className="relative flex h-2 w-2">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
-                  </span>
-                </div>
-                <div className="flex flex-col items-end gap-0.5">
-                  {/* 数字期号 */}
-                  <span className="text-xs text-white font-mono font-bold">
-                    {hashTerm ? `${hashTerm} 期` : hashPeriod ? `${hashPeriod.slice(0, 8)}…` : "等待数据…"}
-                  </span>
-                  {/* 最近更新时间 */}
-                  <span className={`text-[10px] font-mono ${hashLastBetAt > 0 && nowTs - hashLastBetAt < 10_000 ? "text-emerald-400" : "text-slate-600"}`}>
-                    {hashLastBetAt > 0
-                      ? (() => {
-                          const s = Math.floor((nowTs - hashLastBetAt) / 1000);
-                          if (s < 60) return `${s}秒前`;
-                          return `${Math.floor(s / 60)}分${s % 60}秒前`;
-                        })()
-                      : "暂无数据"}
-                  </span>
-                </div>
-              </div>
-              {(() => {
-                const KK_RATE = 100_000; // KK 100,000 = 1 USDT
-                const ct = hashBets.reduce((acc, b) => { acc[b.currency] += b.amount; return acc; }, { kk: 0, usdt: 0, cny: 0 });
-                const colors: Record<string, string> = { kk: "border-yellow-500/40 bg-yellow-500/8", usdt: "border-emerald-500/40 bg-emerald-500/8", cny: "border-blue-500/40 bg-blue-500/8" };
-                const textColors: Record<string, string> = { kk: "text-yellow-400", usdt: "text-emerald-400", cny: "text-blue-400" };
-                const kkUsdt = ct.kk / KK_RATE;
-                return (
-                  <>
-                    <div className="grid grid-cols-3 gap-2">
-                      {(["kk", "usdt", "cny"] as const).map(cur => (
-                        <div key={cur} className={`rounded-xl border px-3 py-2.5 text-center ${colors[cur]}`}>
-                          <div className={`text-xs font-semibold uppercase tracking-wider mb-1 ${textColors[cur]}`}>{cur === "kk" ? "KK" : cur.toUpperCase()}</div>
-                          <div className="text-white font-bold text-base">
-                            {ct[cur] > 0 ? ct[cur].toLocaleString("zh-CN", { maximumFractionDigits: 2 }) : "—"}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                    {/* KK 闪兑折合 USDT */}
-                    {ct.kk > 0 && (
-                      <div className="flex items-center justify-between px-3 py-2 rounded-xl bg-yellow-500/5 border border-yellow-500/20 text-xs mt-1">
-                        <span className="text-yellow-400/70">⚡ KK 闪兑折合</span>
-                        <span className="text-white font-mono">
-                          {ct.kk.toLocaleString("zh-CN", { maximumFractionDigits: 0 })} KK
-                          <span className="text-slate-500 mx-1">÷ 100,000 =</span>
-                          <span className="text-emerald-400 font-bold">{kkUsdt.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 4 })} USDT</span>
-                        </span>
-                      </div>
-                    )}
-                  </>
-                );
-              })()}
-            </div>
-
             {/* 玩家输赢统计 */}
             {hashBets.length > 0 && (() => {
-              // 下注分类
               const betCat = (dir: string): string => {
-                if (dir === "大" || dir === "小" || dir === "单" || dir === "双") return "大小单双";
-                if (dir === "大单" || dir === "大双" || dir === "小单" || dir === "小双") return "大单大双小单小双";
-                if (/^\d+$/.test(dir)) return "数字0-27";
-                if (dir === "豹子" || dir === "顺子" || dir === "对子") return "豹子顺子对子";
-                if (dir === "极大" || dir === "极小") return "极大极小";
+                const singles = ["大","小","单","双"];
+                const combos = ["大单","大双","小单","小双"];
+                const special = ["豹子","顺子","对子","极大","极小"];
+                if (singles.includes(dir) || combos.includes(dir) || special.includes(dir)) return dir;
+                if (/^\d{1,2}$/.test(dir)) { const n = parseInt(dir, 10); if (n >= 0 && n <= 27) return dir; }
                 return "其他";
               };
-              const catKeys = ["大小单双", "大单大双小单小双", "数字0-27", "豹子顺子对子", "极大极小"] as const;
-              // 期号→结果映射
+              const allCats = ["大","小","单","双","大单","大双","小单","小双",
+                "0","1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18","19","20","21","22","23","24","25","26","27",
+                "豹子","顺子","对子","极大","极小"] as const;
               const termResult = new Map<number, string>();
-              for (const h of hashHistory) {
-                if (h.term != null && h.result) termResult.set(h.term, h.result);
-              }
-              const isWin = (dir: string, result: string): boolean => {
-                if (!result) return false;
-                if (dir === result) return true;
-                if (dir === "大" && result.startsWith("大")) return true;
-                if (dir === "小" && result.startsWith("小")) return true;
-                if (dir === "单" && result.endsWith("单")) return true;
-                if (dir === "双" && result.endsWith("双")) return true;
+              for (const h of hashHistory) if (h.term != null && h.result) termResult.set(h.term, h.result);
+              const isWin = (dir: string, r: string): boolean => {
+                if (!r) return false;
+                if (dir === r) return true;
+                if (dir === "大" && r.startsWith("大")) return true;
+                if (dir === "小" && r.startsWith("小")) return true;
+                if (dir === "单" && r.endsWith("单")) return true;
+                if (dir === "双" && r.endsWith("双")) return true;
                 return false;
               };
-              // 按玩家聚合
-              const players: Record<string, {
-                bets: number; cats: Record<string, number>;
-                kk: number; usdt: number; cny: number;
-                wins: number; losses: number;
-              }> = {};
+              const players: Record<string, { bets: number; cats: Record<string, number>; kk: number; usdt: number; cny: number; wins: number; losses: number }> = {};
               for (const b of hashBets) {
                 const nm = b.senderName || b.senderId || "未知";
                 if (!players[nm]) {
-                  players[nm] = { bets: 0, cats: {}, kk: 0, usdt: 0, cny: 0, wins: 0, losses: 0 };
-                  for (const k of catKeys) players[nm].cats[k] = 0;
+                  const cats: Record<string, number> = {};
+                  for (const c of allCats) cats[c] = 0;
+                  players[nm] = { bets: 0, cats, kk: 0, usdt: 0, cny: 0, wins: 0, losses: 0 };
                 }
-                const p = players[nm];
-                p.bets++;
+                const p = players[nm]; p.bets++;
                 const cat = betCat(b.direction);
                 if (p.cats[cat] !== undefined) p.cats[cat]++;
                 if (b.currency === "kk") p.kk += b.amount;
@@ -2279,41 +2195,60 @@ export default function AdminPage() {
                 else p.cny += b.amount;
                 if (b.termContext != null) {
                   const result = termResult.get(b.termContext);
-                  if (result) {
-                    if (isWin(b.direction, result)) p.wins++;
-                    else p.losses++;
-                  }
+                  if (result) { if (isWin(b.direction, result)) p.wins++; else p.losses++; }
                 }
               }
               const sorted = Object.entries(players).sort((a, b) => b[1].kk + b[1].usdt + b[1].cny - (a[1].kk + a[1].usdt + a[1].cny));
               const fmt = (n: number) => n > 0 ? n.toLocaleString("zh-CN", { maximumFractionDigits: 0 }) : "—";
+              const grp: Record<string, string[]> = {
+                "大小单双": ["大","小","单","双"],
+                "组合": ["大单","大双","小单","小双"],
+                "数字": Array.from({ length: 28 }, (_, i) => String(i)),
+                "特殊": ["豹子","顺子","对子","极大","极小"],
+              };
               return (
                 <div className="bg-[#161929] border border-[#252a3d] rounded-2xl overflow-hidden">
                   <div className="px-4 py-3 border-b border-[#252a3d] flex items-center justify-between">
                     <span className="text-white font-semibold text-sm">玩家输赢</span>
-                    <span className="text-xs text-slate-500">{sorted.length} 人</span>
+                    <span className="text-xs text-slate-500">{sorted.length} 人 / 每期明细保留30期自动清除</span>
                   </div>
-                  <div className="overflow-x-auto">
+                  <div className="overflow-x-auto" style={{ maxHeight: "70vh" }}>
                     <table className="w-full text-xs">
-                      <thead>
+                      <thead className="sticky top-0 bg-[#161929] z-20">
                         <tr className="text-slate-500 border-b border-[#252a3d]">
-                          <th className="text-left py-2 px-2 whitespace-nowrap">玩家</th>
+                          <th className="text-left py-2 px-2 whitespace-nowrap sticky left-0 bg-[#161929] z-10">玩家</th>
                           <th className="text-right py-2 px-1 whitespace-nowrap">注数</th>
-                          {catKeys.map(k => <th key={k} className="text-right py-2 px-1 whitespace-nowrap text-slate-500">{k}</th>)}
-                          <th className="text-right py-2 px-1 whitespace-nowrap">下注KK</th>
+                          {Object.entries(grp).map(([g, cats]) => (
+                            <th key={g} colSpan={cats.length} className="text-center py-2 px-0.5 whitespace-nowrap border-l border-[#252a3d] text-slate-400">{g}</th>
+                          ))}
+                          <th className="text-right py-2 px-1 whitespace-nowrap border-l border-[#252a3d]">下注KK</th>
                           <th className="text-right py-2 px-1 whitespace-nowrap">下注U</th>
                           <th className="text-right py-2 px-1 whitespace-nowrap">下注CNY</th>
                           <th className="text-right py-2 px-1 whitespace-nowrap text-green-400">赢</th>
                           <th className="text-right py-2 px-1 whitespace-nowrap text-red-400">输</th>
                         </tr>
+                        <tr className="text-slate-600 border-b border-[#252a3d]">
+                          <th className="text-left py-1 px-2 sticky left-0 bg-[#161929]"></th>
+                          <th className="text-right py-1 px-1"></th>
+                          {Object.values(grp).flat().map(c => (
+                            <th key={c} className="text-center py-1 px-0.5 font-normal text-[10px]">{c}</th>
+                          ))}
+                          <th className="text-right py-1 px-1 border-l border-[#252a3d]"></th>
+                          <th className="text-right py-1 px-1"></th>
+                          <th className="text-right py-1 px-1"></th>
+                          <th className="text-right py-1 px-1"></th>
+                          <th className="text-right py-1 px-1"></th>
+                        </tr>
                       </thead>
                       <tbody>
                         {sorted.map(([name, p]) => (
                           <tr key={name} className="border-b border-[#252a3d]/50 hover:bg-white/5">
-                            <td className="py-2 px-2 text-white font-semibold whitespace-nowrap">{name}</td>
+                            <td className="py-2 px-2 text-white font-semibold whitespace-nowrap sticky left-0 bg-[#161929]">{name}</td>
                             <td className="py-2 px-1 text-right text-slate-300">{p.bets}</td>
-                            {catKeys.map(k => <td key={k} className="py-2 px-1 text-right text-slate-400 font-mono">{p.cats[k] || "—"}</td>)}
-                            <td className="py-2 px-1 text-right text-yellow-400 font-mono whitespace-nowrap">{fmt(p.kk)}</td>
+                            {Object.values(grp).flat().map(c => (
+                              <td key={c} className="py-2 px-0.5 text-right text-slate-400 font-mono">{p.cats[c] || "—"}</td>
+                            ))}
+                            <td className="py-2 px-1 text-right text-yellow-400 font-mono whitespace-nowrap border-l border-[#252a3d]">{fmt(p.kk)}</td>
                             <td className="py-2 px-1 text-right text-emerald-400 font-mono whitespace-nowrap">{p.usdt > 0 ? p.usdt.toLocaleString("zh-CN", { maximumFractionDigits: 2 }) : "—"}</td>
                             <td className="py-2 px-1 text-right text-blue-400 font-mono whitespace-nowrap">{p.cny > 0 ? p.cny.toLocaleString("zh-CN", { maximumFractionDigits: 2 }) : "—"}</td>
                             <td className="py-2 px-1 text-right text-green-400 font-mono">{p.wins || "—"}</td>
@@ -2326,178 +2261,6 @@ export default function AdminPage() {
                 </div>
               );
             })()}
-
-
-            {/* 开奖历史 */}
-            {(() => {
-              const KK_RATE = 100_000;
-              const CNY_RATE = 6.7;
-              const toU = (d: { kk: number; usdt: number; cny: number }) =>
-                d.kk / KK_RATE + d.usdt + d.cny / CNY_RATE;
-              const fU = (u: number) => u > 0
-                ? u.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-                : "—";
-              const resultColor = (r: string | null) => {
-                if (!r) return "text-slate-500";
-                if (r.startsWith("大")) return "text-red-400";
-                return "text-sky-400";
-              };
-              const dirCols = ["大单", "大双", "大", "小单", "小双", "小"] as const;
-              const liveZero = () => ({ kk: 0, usdt: 0, cny: 0 });
-              const liveDirs: Record<KillDir, { kk: number; usdt: number; cny: number }> = {
-                大单: liveZero(),
-                大双: liveZero(),
-                小单: liveZero(),
-                小双: liveZero(),
-              };
-              for (const b of hashBets) {
-                const d = b.direction as KillDir;
-                if (d in liveDirs) liveDirs[d][b.currency] += b.amount;
-              }
-              const hasLive = Object.values(liveDirs).some(v => v.kk + v.usdt + v.cny > 0);
-              const pickLiveKill3 = () => {
-                if (!hasLive) return;
-                const ranked = KILL_DIRS
-                  .map(d => ({ d, u: toU(liveDirs[d]) }))
-                  .sort((a, b) => a.u - b.u);
-                const pick = ranked.slice(0, 3).map(x => x.d);
-                const text = pick.map(d => `${d} ${killAmts[d]}`.trim()).join("\n");
-                void navigator.clipboard.writeText(text);
-                setHashCopied(true);
-                setTimeout(() => setHashCopied(false), 2000);
-              };
-              return (
-                <div className="bg-[#161929] border border-[#252a3d] rounded-2xl overflow-hidden">
-                  <div className="px-4 py-3 border-b border-[#252a3d] flex items-center gap-2">
-                    <span className="text-white font-semibold text-sm">📋 开奖记录</span>
-                    <span className="text-slate-500 text-xs">最近 {hashHistory.length} 期</span>
-                    <div className="ml-auto flex items-center gap-2 flex-wrap justify-end">
-                      <div className="flex items-center gap-1 flex-wrap">
-                        {KILL_DIRS.map(d => (
-                          <div key={d} className="flex items-center gap-1 bg-[#0d1117] border border-[#252a3d] rounded-lg px-2 py-1">
-                            <span className="text-[10px] text-slate-500">{d}</span>
-                            <input
-                              type="number"
-                              value={killAmts[d]}
-                              onChange={e => setKillAmts(p => ({ ...p, [d]: e.target.value }))}
-                              className="w-12 bg-transparent text-white text-xs font-mono outline-none"
-                              min="0"
-                            />
-                          </div>
-                        ))}
-                      </div>
-                      <button
-                        disabled={!hasLive}
-                        onClick={pickLiveKill3}
-                        className="text-xs px-2 py-1 rounded-lg border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/10 disabled:opacity-40 transition"
-                      >
-                        {hashCopied ? "已复制" : "复制最小三组"}
-                      </button>
-                      <button
-                        onClick={clearCanadaMonitorLocal}
-                        className="text-xs px-2 py-1 rounded-lg border border-red-500/30 text-red-300 hover:bg-red-500/10 transition"
-                      >
-                        清空
-                      </button>
-                    </div>
-                  </div>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-xs">
-                      <thead>
-                        <tr className="border-b border-[#252a3d] text-slate-500">
-                          <th className="px-3 py-2 text-left font-medium whitespace-nowrap">期号</th>
-                          <th className="px-3 py-2 text-center font-medium whitespace-nowrap">结果</th>
-                          {dirCols.map(d => (
-                            <th key={d} className={`px-3 py-2 text-right font-medium whitespace-nowrap ${d.startsWith("大") ? "text-red-500/60" : "text-sky-500/60"}`}>{d} ≈U</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {hashHistory.length === 0 && (
-                          <tr>
-                            <td colSpan={8} className="px-4 py-6 text-center text-slate-600 text-xs">
-                              等待下一期"停止下注"消息后自动记录…
-                            </td>
-                          </tr>
-                        )}
-                        {hashHistory.map((rec, i) => {
-                          const totalU = dirCols.reduce((s, d) => s + toU(rec.dirs[d] ?? { kk: 0, usdt: 0, cny: 0 }), 0);
-                          void totalU;
-                          return (
-                            <tr key={i} className="border-b border-[#1a1f31] hover:bg-[#1a1f31]/50 transition-colors">
-                              <td className="px-3 py-2 text-slate-400 font-mono whitespace-nowrap">
-                                {rec.term ?? "—"}
-                              </td>
-                              <td className="px-3 py-2 text-center">
-                                {rec.result
-                                  ? <span className={`font-bold text-sm ${resultColor(rec.result)}`}>{rec.result}</span>
-                                  : <span className="text-slate-600 animate-pulse">开奖中…</span>
-                                }
-                              </td>
-                              {dirCols.map(d => {
-                                const u = toU(rec.dirs[d] ?? { kk: 0, usdt: 0, cny: 0 });
-                                // "大"覆盖大单/大双，"小"覆盖小单/小双
-                                const isResult = rec.result === d
-                                  || (d === "大" && rec.result != null && rec.result.startsWith("大"))
-                                  || (d === "小" && rec.result != null && rec.result.startsWith("小"));
-                                const isLosing = !!rec.result && !isResult;
-                                return (
-                                  <td key={d} className={`px-3 py-2 text-right font-mono whitespace-nowrap ${isResult ? "text-emerald-300 font-bold" : isLosing ? "text-red-400" : "text-slate-400"}`}>
-                                    {isResult && u > 0 && <span className="mr-1 text-emerald-500">🏆</span>}
-                                    {fU(u)}
-                                  </td>
-                                );
-                              })}
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              );
-            })()}
-
-            {/* 下注列表 */}
-            <div className="bg-[#161929] border border-[#252a3d] rounded-2xl overflow-hidden">
-              <div className="px-4 py-3 border-b border-[#252a3d] flex items-center justify-between">
-                <span className="text-white font-semibold text-sm">下注明细</span>
-                <span className="text-xs text-slate-500">{hashBets.length} 条</span>
-              </div>
-              {hashBets.length === 0 ? (
-                <div className="px-4 py-8 text-center text-slate-600 text-sm">
-                  暂无下注记录，等待群组消息…
-                </div>
-              ) : (
-                <div className="divide-y divide-[#1e2235]">
-                  {hashBets.map(b => {
-                    const curColor: Record<string, string> = {
-                      kk: "text-yellow-400 bg-yellow-500/10 border-yellow-500/30",
-                      usdt: "text-emerald-400 bg-emerald-500/10 border-emerald-500/30",
-                      cny: "text-blue-400 bg-blue-500/10 border-blue-500/30",
-                    };
-                    const dirColor = b.direction.startsWith("大") ? "text-red-400" : "text-sky-400";
-                    return (
-                      <div key={b.id} className="px-4 py-2.5 flex items-center gap-3 hover:bg-white/[0.02]">
-                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${curColor[b.currency]} flex-shrink-0`}>
-                          {b.currency.toUpperCase()}
-                        </span>
-                        <span className={`text-sm font-semibold w-16 text-right flex-shrink-0 ${dirColor}`}>
-                          {b.direction}
-                        </span>
-                        <span className="text-white font-mono text-sm flex-shrink-0 w-20 text-right">
-                          {b.amount.toLocaleString("zh-CN", { maximumFractionDigits: 2 })}
-                        </span>
-                        <span className="text-slate-400 text-xs truncate flex-1 min-w-0">{b.senderName || b.senderId}</span>
-                        <span className="text-slate-600 text-[10px] flex-shrink-0 tabular-nums">
-                          {new Date(b.ts).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
           </div>
         )}
 
