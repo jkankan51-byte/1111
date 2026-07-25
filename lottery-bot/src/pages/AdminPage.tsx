@@ -235,6 +235,8 @@ export default function AdminPage() {
   const [hashSnap, setHashSnap] = useState<{ term: number; dirs: Record<string, { kk: number; usdt: number; cny: number }>; closedAt: number } | null>(null);
   // 赔付记录：key = term:direction → 赔付金额
   const [hashPayouts, setHashPayouts] = useState<Map<string, number>>(new Map());
+  // 玩家输赢全屏切换
+  const [hashFull, setHashFull] = useState(false);
   type PeriodRecord = {
     term: number | null;
     result: string | null;
@@ -2244,7 +2246,6 @@ export default function AdminPage() {
               }
               const sorted = Object.entries(players).sort((a, b) => b[1].kk + b[1].usdt + b[1].cny - (a[1].kk + a[1].usdt + a[1].cny));
               const fmt = (n: number) => n > 0 ? n.toLocaleString("zh-CN", { maximumFractionDigits: 0 }) : "—";
-              const [hashFull, setHashFull] = useState(false);
               const grp: Record<string, string[]> = {
                 "大小单双": ["大","小","单","双"],
                 "组合": ["大单","大双","小单","小双"],
