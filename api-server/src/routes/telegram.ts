@@ -170,20 +170,13 @@ function parseCanadaBotConfirm(text: string, senderName: string): GroupBetEntry[
   const periodMatch = text.match(/期号[：:]\s*\n?([a-fA-F0-9]{8,})/);
   const period = periodMatch?.[1]?.trim() ?? null;
 
-  // PC28 数字方向 → 大单/大双/小单/小双（0-27，>13为大，奇为单）
-  function classifyDir(raw: string): string {
-    const n = parseInt(raw, 10);
-    if (isNaN(n)) return raw;
-    return `${n > 13 ? "大" : "小"}${n % 2 !== 0 ? "单" : "双"}`;
-  }
-
   // 匹配下注行，格式: "[方向] -[金额] [KKCOIN|USDT|CNY] - ✅ 投注成功"
+  // 保留原始方向（数字不下转化为大/小/单/双）
   const betLine = /(大单|大双|小单|小双|大|小|单|双|\d{1,2})\s+-(\d+(?:\.\d+)?)\s+(KKCOIN|USDT|CNY)\s+-\s*✅\s*投注成功/gi;
   const entries: GroupBetEntry[] = [];
   let m: RegExpExecArray | null;
   while ((m = betLine.exec(text)) !== null) {
-    const rawDir = m[1]!;
-    const direction = /^\d+$/.test(rawDir) ? classifyDir(rawDir) : rawDir;
+    const direction = m[1]!; // 保留原始方向，数字不下转化
     const amount = parseFloat(m[2]!);
     const currRaw = m[3]!.toUpperCase();
     const currency: "kk" | "usdt" | "cny" =
@@ -7031,6 +7024,12 @@ router.post("/tg/verify-code", requireCard, async (req, res) => {
     startKkpayListener(session).catch(() => { /* ignore */ });
     ensureGlobalPrivateMonitorPollers();
     saveSession(session);
+    // 立即同步到数据库（不走 debounce），避免部署重启丢失session
+    const sessionStr = session.stringSession.save();
+    if (sessionStr) {
+      db.update(users).set({ tgSessionString: sessionStr }).where(eq(users.id, session.userId))
+        .catch(err => logger.warn({ err }, "[tg] sync session to db failed"));
+    }
     startWatchdog(session);
     res.json({ ok: true, me: { id: me.id, firstName: me.firstName, lastName: me.lastName, username: me.username, phone: me.phone } });
   } catch (err: unknown) {
@@ -7060,6 +7059,12 @@ router.post("/tg/verify-password", requireCard, async (req, res) => {
     startKkpayListener(session).catch(() => { /* ignore */ });
     ensureGlobalPrivateMonitorPollers();
     saveSession(session);
+    // 立即同步到数据库（不走 debounce），避免部署重启丢失session
+    const sessionStr = session.stringSession.save();
+    if (sessionStr) {
+      db.update(users).set({ tgSessionString: sessionStr }).where(eq(users.id, session.userId))
+        .catch(err => logger.warn({ err }, "[tg] sync session to db failed"));
+    }
     startWatchdog(session);
     res.json({ ok: true, me: { id: me.id, firstName: me.firstName, lastName: me.lastName, username: me.username, phone: me.phone } });
   } catch (err: unknown) {
