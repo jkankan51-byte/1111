@@ -25,7 +25,9 @@ interface GroupBetEntry {
   direction: string;
   raw: string;
   period: string | null;
-  termContext: number | null; // 该注单属于哪一期（从"开始下注"期号推断）
+  termContext: number | null;
+  groupId?: string;
+  groupTitle?: string;
 }
 const canadaBets: GroupBetEntry[] = [];
 // 仅用于展示页面 header，不参与清空逻辑
@@ -158,7 +160,7 @@ function pushPrivateAdminEvent(type: string, payload: Record<string, unknown>): 
 //   🟠大 -100 CNY - ✅ 投注成功
 //   ________________
 //   💰 余额: 1010.36 CNY
-function parseCanadaBotConfirm(text: string, senderName: string): GroupBetEntry[] {
+function parseCanadaBotConfirm(text: string, senderName: string, groupId?: string, groupTitle?: string): GroupBetEntry[] {
   if (!text.includes("投注成功") || !text.includes("期号")) return [];
 
   // 提取下注人昵称和 TG ID
@@ -193,6 +195,8 @@ function parseCanadaBotConfirm(text: string, senderName: string): GroupBetEntry[
         raw: text.slice(0, 200),
         period,
         termContext: null,
+        groupId,
+        groupTitle,
       });
     }
   }
@@ -6343,11 +6347,36 @@ async function pollOneCanadaGroup(session: TgSession, groupId: string): Promise<
         continue;
       }
 
+      // ── 即将封盘提示 → 给出无人下注的数字和方向推荐 ──
+      if (/即将封盘/.test(text) && /剩余\d+秒/.test(text)) {
+        const termBets = canadaBets.filter(b => b.termContext === canadaCurrentBetTerm);
+        const betDirs = new Set(termBets.map(b => b.direction));
+        const dirAmts: Record<string, number> = {};
+        for (const b of termBets) {
+          dirAmts[b.direction] = (dirAmts[b.direction] ?? 0) + b.amount;
+        }
+        // 无人下注的数字 (0-27)
+        const emptyNums: number[] = [];
+        for (let n = 0; n <= 27; n++) {
+          if (!betDirs.has(String(n))) emptyNums.push(n);
+        }
+        // 下注最少的方向
+        const allDirs = ["大","小","单","双","大单","大双","小单","小双"];
+        const sorted = allDirs.map(d => ({ dir: d, amt: dirAmts[d] ?? 0 })).sort((a, b) => a.amt - b.amt);
+        const leastDirs = sorted.filter(s => s.amt >= 0).slice(0, 4).map(s => `${s.dir}(${s.amt > 0 ? s.amt.toLocaleString("zh-CN", { maximumFractionDigits: 0 }) : "0"})`);
+        pushAdminEvent("closing:recommend", {
+          emptyNums: emptyNums.length > 0 ? emptyNums : null,
+          leastDirs,
+          term: canadaCurrentBetTerm,
+        });
+        continue;
+      }
+
       const u = msg.sender as Api.User | null;
       const senderName = u
         ? ([u.firstName, u.lastName].filter(Boolean).join(" ") || u.username || "")
         : "";
-      const entries = parseCanadaBotConfirm(text, senderName);
+      const entries = parseCanadaBotConfirm(text, senderName, groupId, canadaGroupTitleCache.get(groupId));
       for (const entry of entries) {
         entry.termContext = canadaCurrentBetTerm; // 标记归属期号
         if (entry.period) canadaBetPeriod = entry.period;
