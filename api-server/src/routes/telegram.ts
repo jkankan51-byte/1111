@@ -172,7 +172,7 @@ function parseCanadaBotConfirm(text: string, senderName: string): GroupBetEntry[
 
   // 匹配下注行，格式: "[方向] -[金额] [KKCOIN|USDT|CNY] - ✅ 投注成功"
   // 保留原始方向（数字不下转化为大/小/单/双）
-  const betLine = /(大单|大双|小单|小双|大|小|单|双|\d{1,2})\s+-(\d+(?:\.\d+)?)\s+(KKCOIN|USDT|CNY)\s+-\s*✅\s*投注成功/gi;
+  const betLine = /(大单|大双|小单|小双|大|小|单|双|豹子|顺子|对子|极大|极小|\d{1,2})\s+-(\d+(?:\.\d+)?)\s+(KKCOIN|USDT|CNY)\s+-\s*✅\s*投注成功/gi;
   const entries: GroupBetEntry[] = [];
   let m: RegExpExecArray | null;
   while ((m = betLine.exec(text)) !== null) {
@@ -6531,7 +6531,7 @@ function parsePrivateBetConfirm(text: string, senderName: string): GroupBetEntry
   if (sections.length === 0) sections.push({ player: senderName, body: text });
 
   for (const s of sections) {
-    const betLine = /(大单|大双|小单|小双|大|小|单|双|数字\s*\d{1,2})\s*[\/\s]\s*(\d+(?:\.\d+)?)\s+投注成功/gi;
+    const betLine = /(大单|大双|小单|小双|大|小|单|双|豹子|顺子|对子|极大|极小|数字\s*\d{1,2})\s*[\/\s]\s*(\d+(?:\.\d+)?)\s+投注成功/gi;
     let m: RegExpExecArray | null;
     while ((m = betLine.exec(s.body)) !== null) {
       const rawDir = (m[1] ?? "").replace(/\s+/g, "");
