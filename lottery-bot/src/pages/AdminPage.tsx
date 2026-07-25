@@ -2245,7 +2245,8 @@ export default function AdminPage() {
                   }
                 }
               }
-              const sorted = Object.entries(players).sort((a, b) => b[1].kk + b[1].usdt + b[1].cny - (a[1].kk + a[1].usdt + a[1].cny));
+              const toVal = (p: { kk: number; usdt: number; cny: number }) => p.kk / 100000 + p.usdt + p.cny / 6.7;
+              const sorted = Object.entries(players).sort((a, b) => toVal(b[1]) - toVal(a[1]));
               const fmt = (n: number) => n > 0 ? n.toLocaleString("zh-CN", { maximumFractionDigits: 0 }) : "—";
               const grp: Record<string, string[]> = {
                 "大小单双": ["大","小","单","双"],
