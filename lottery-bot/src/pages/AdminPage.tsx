@@ -2361,8 +2361,10 @@ export default function AdminPage() {
               );
             })()}
 
-            {/* 总金额统计 */}
-            {hashBets.length > 0 && (() => {
+            {/* 总金额统计（仅当前期数据，每局清零） */}
+            {hashBets.length > 0 && hashTerm !== null && (() => {
+              const currentBets = hashBets.filter(b => b.termContext === hashTerm);
+              if (currentBets.length === 0) return null;
               const catKeys = {
                 "大小单双": ["大","小","单","双"],
                 "组合": ["大单","大双","小单","小双"],
@@ -2371,7 +2373,7 @@ export default function AdminPage() {
               };
               const totals: Record<string, { kk: number; usdt: number; cny: number; u: number }> = {};
               for (const cats of Object.values(catKeys).flat()) totals[cats] = { kk: 0, usdt: 0, cny: 0, u: 0 };
-              for (const b of hashBets) {
+              for (const b of currentBets) {
                 const d = b.direction;
                 if (totals[d] !== undefined) {
                   totals[d].kk += b.currency === "kk" ? b.amount : 0;
@@ -2398,20 +2400,20 @@ export default function AdminPage() {
                   <span className="text-white font-semibold text-sm">总金额统计</span>
                   {Object.entries(catKeys).map(([g, cats]) => (
                     <div key={g} className={`rounded-xl border ${grpClr[g]} p-3`}>
-                      <div className={`text-xs font-semibold mb-2 ${grpTx[g]}`}>{g}</div>
-                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-1.5">
+                      <div className={`text-sm font-bold mb-2 ${grpTx[g]}`}>{g}</div>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
                         {cats.map(c => {
                           const t = totals[c];
                           const u = t ? t.u : 0;
                           if (u === 0) return null;
                           return (
-                            <div key={c} className="bg-[#0d1117] rounded-lg px-2 py-1.5 text-center">
-                              <div className="text-white font-bold text-sm">{c}</div>
-                              <div className="text-white font-mono text-xs">{fmt(u)}<span className="text-slate-500 ml-0.5">U</span></div>
-                              <div className="flex items-center justify-center gap-1 text-[9px] mt-0.5">
-                                {t.kk > 0 && <span className="text-yellow-500/80">{t.kk.toLocaleString("zh-CN", { maximumFractionDigits: 0 })}K</span>}
-                                {t.usdt > 0 && <span className="text-emerald-500/80">{t.usdt.toLocaleString("zh-CN", { maximumFractionDigits: 2 })}U</span>}
-                                {t.cny > 0 && <span className="text-blue-500/80">{t.cny.toLocaleString("zh-CN", { maximumFractionDigits: 2 })}¥</span>}
+                            <div key={c} className="bg-[#0d1117] rounded-lg px-3 py-2 text-center">
+                              <div className="text-white font-bold text-base">{c}</div>
+                              <div className="text-white font-mono text-sm font-semibold">{fmt(u)}<span className="text-slate-500 ml-0.5">U</span></div>
+                              <div className="flex items-center justify-center gap-1.5 text-xs mt-1">
+                                {t.kk > 0 && <span className="text-yellow-400/90">{t.kk.toLocaleString("zh-CN", { maximumFractionDigits: 0 })}K</span>}
+                                {t.usdt > 0 && <span className="text-emerald-400/90">{t.usdt.toLocaleString("zh-CN", { maximumFractionDigits: 2 })}U</span>}
+                                {t.cny > 0 && <span className="text-blue-400/90">{t.cny.toLocaleString("zh-CN", { maximumFractionDigits: 2 })}¥</span>}
                               </div>
                             </div>
                           );
