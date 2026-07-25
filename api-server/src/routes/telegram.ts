@@ -55,6 +55,16 @@ const CANADA_POLL_GROUPS_PER_TICK = 4;
 const CANADA_MAX_BETS = 2000;
 const CANADA_WINDOW_MS = 10 * 60 * 1000;
 const canadaGroupTitleCache = new Map<string, string>();
+// 加拿大赔付记录：key = term:direction ，用于计算玩家实际盈利
+const canadaPayouts = new Map<string, { direction: string; amount: number; currency: string; term: number; }>();
+function parseCanadaPayout(text: string): { direction: string; amount: number; currency: string } | null {
+  // 格式: 🏆 小 399600.00 💰  or  🏆大198.00CNY
+  const m = /🏆\s*(大单|大双|小单|小双|大|小|单|双|\d{1,2})\s+([\d.]+)\s*(?:💰|KKCOIN|USDT|CNY|USD)?/i.exec(text);
+  if (!m) return null;
+  const amount = parseFloat(m[2]!);
+  if (!isFinite(amount) || amount <= 0) return null;
+  return { direction: m[1]!, amount, currency: "cny" };
+}
 const privateBets: GroupBetEntry[] = [];
 let privateCurrentTerm: number | null = null;
 let privateLastBetAt = 0;
@@ -6352,6 +6362,14 @@ async function pollOneCanadaGroup(session: TgSession, groupId: string): Promise<
         if (canadaBets.length > CANADA_MAX_BETS) canadaBets.pop();
         newEntries.push(entry);
       }
+      // ── 解析赔付消息（🏆） ──
+      if (entries.length === 0 && canadaCurrentBetTerm !== null) {
+        const payout = parseCanadaPayout(text);
+        if (payout) {
+          const key = `${canadaCurrentBetTerm}:${payout.direction}`;
+          canadaPayouts.set(key, { ...payout, term: canadaCurrentBetTerm });
+        }
+      }
     }
     if (newEntries.length > 0) {
       canadaLastBetAt = Date.now();
@@ -6445,7 +6463,8 @@ function scheduleCanadaLoop(session: TgSession): void {
       canadaLastBetAt = kept.length > 0 ? canadaLastBetAt : 0;
       const term = getCanadaLiveTerm();
       const bets = term ? canadaBets.filter(b => b.termContext === term) : canadaBets;
-      pushAdminEvent("bets:reset", { bets, period: canadaBetPeriod, term, lastBetAt: canadaLastBetAt, snap: lastCanadaSnap });
+      const payoutsArr = [...canadaPayouts.entries()].map(([k, v]) => ({ key: k, ...v }));
+      pushAdminEvent("bets:reset", { bets, period: canadaBetPeriod, term, lastBetAt: canadaLastBetAt, snap: lastCanadaSnap, payouts: payoutsArr });
     }
     session.canadaSharedPoller = setTimeout(() => { session.canadaSharedPoller = undefined; void loop(); }, 1000);
   };
