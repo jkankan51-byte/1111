@@ -807,7 +807,38 @@ export default function Dashboard() {
   const [clearLoading, setClearLoading] = useState(false);
   const [sseAlert, setSseAlert] = useState<string | null>(null);
   const [themeColor, setThemeColor] = useState(() => { try { return localStorage.getItem("themeColor") || "cyan"; } catch { return "cyan"; } });
-  useEffect(() => { document.documentElement.setAttribute("data-theme", themeColor); }, [themeColor]);
+  useEffect(() => {
+    const root = document.documentElement;
+    const themes: Record<string, { primary: string; accent: string; ring: string }> = {
+      cyan:  { primary: "187 100% 50%", accent: "#00f0ff", ring: "187 100% 50%" },
+      pink:  { primary: "330 100% 50%", accent: "#ff0080", ring: "330 100% 50%" },
+      gold:  { primary: "51 100% 50%",  accent: "#ffd700", ring: "51 100% 50%" },
+      green: { primary: "162 100% 50%", accent: "#00ff88", ring: "162 100% 50%" },
+      purple:{ primary: "270 91% 65%",  accent: "#a855f7", ring: "270 91% 65%" },
+    };
+    const t = themes[themeColor] ?? themes.cyan!;
+    root.style.setProperty("--primary", t.primary);
+    root.style.setProperty("--ring", t.ring);
+    root.style.setProperty("--chart-1", t.primary);
+    root.style.setProperty("--sidebar-primary", t.primary);
+    root.style.setProperty("--sidebar-ring", t.ring);
+    // Also inject a <style> tag for Tailwind utility overrides
+    let styleEl = document.getElementById("theme-style") as HTMLStyleElement | null;
+    if (!styleEl) {
+      styleEl = document.createElement("style");
+      styleEl.id = "theme-style";
+      document.head.appendChild(styleEl);
+    }
+    styleEl.textContent = `
+      .text-blue-400, .text-cyan-400, .text-blue-300, .text-cyan-300,
+      .text-sky-400, .text-indigo-400, .hover\\:text-blue-400:hover,
+      .hover\\:text-cyan-400:hover { color: ${t.accent} !important; }
+      .bg-blue-500\\/10, .bg-blue-500\\/20, .bg-cyan-500\\/10,
+      .bg-sky-500\\/10 { background: ${t.accent}1a !important; }
+      .border-blue-500\\/30, .border-cyan-500\\/30,
+      .border-blue-500\\/20 { border-color: ${t.accent}4d !important; }
+    `;
+  }, [themeColor]);
   const [showThemePicker, setShowThemePicker] = useState(false);
   const nextCloseRef = useRef<number>(0);
   const sseRef = useRef<EventSource | null>(null);
