@@ -807,34 +807,37 @@ export default function Dashboard() {
   const [clearLoading, setClearLoading] = useState(false);
   const [sseAlert, setSseAlert] = useState<string | null>(null);
   const [themeColor, setThemeColor] = useState(() => { try { return localStorage.getItem("themeColor") || "cyan"; } catch { return "cyan"; } });
-  // Inject theme stylesheet once on mount
+  // Inject theme stylesheet once on mount — changes the DARK BACKGROUND color
   useEffect(() => {
     if (document.getElementById("theme-style")) return;
     const style = document.createElement("style");
     style.id = "theme-style";
-    style.textContent = [
-      'html[data-theme="pink"] .text-blue-400,html[data-theme="pink"] .text-cyan-400,html[data-theme="pink"] .text-blue-300,html[data-theme="pink"] .text-cyan-300{color:#ff0080!important}',
-      'html[data-theme="pink"] .bg-blue-500\\/10,html[data-theme="pink"] .bg-blue-500\\/20{background:rgba(255,0,128,0.1)!important}',
-      'html[data-theme="pink"] .border-blue-500\\/30{border-color:rgba(255,0,128,0.3)!important}',
-      'html[data-theme="gold"] .text-blue-400,html[data-theme="gold"] .text-cyan-400,html[data-theme="gold"] .text-blue-300,html[data-theme="gold"] .text-cyan-300{color:#ffd700!important}',
-      'html[data-theme="gold"] .bg-blue-500\\/10,html[data-theme="gold"] .bg-blue-500\\/20{background:rgba(255,215,0,0.1)!important}',
-      'html[data-theme="gold"] .border-blue-500\\/30{border-color:rgba(255,215,0,0.3)!important}',
-      'html[data-theme="green"] .text-blue-400,html[data-theme="green"] .text-cyan-400,html[data-theme="green"] .text-blue-300,html[data-theme="green"] .text-cyan-300{color:#00ff88!important}',
-      'html[data-theme="green"] .bg-blue-500\\/10,html[data-theme="green"] .bg-blue-500\\/20{background:rgba(0,255,136,0.1)!important}',
-      'html[data-theme="green"] .border-blue-500\\/30{border-color:rgba(0,255,136,0.3)!important}',
-      'html[data-theme="purple"] .text-blue-400,html[data-theme="purple"] .text-cyan-400,html[data-theme="purple"] .text-blue-300,html[data-theme="purple"] .text-cyan-300{color:#a855f7!important}',
-      'html[data-theme="purple"] .bg-blue-500\\/10,html[data-theme="purple"] .bg-blue-500\\/20{background:rgba(168,85,247,0.1)!important}',
-      'html[data-theme="purple"] .border-blue-500\\/30{border-color:rgba(168,85,247,0.3)!important}',
-    ].join("");
+    // Each theme maps[0]=bg, [1]=card, [2]=card2, [3]=border, [4]=headerBg
+    const th: Record<string,string[]> = {
+      cyan:  ["#0b0e1a","#161929","#1a1e30","#252a3d","#1a1f35"],
+      pink:  ["#120a14","#1f1425","#25182d","#35233e","#2a1a33"],
+      gold:  ["#0f0e08","#1d1a10","#262113","#35301d","#2a2615"],
+      green: ["#080f0a","#0f1f14","#142618","#213524","#182a1c"],
+      purple:["#0c0814","#141025","#1a1530","#282142","#1f1835"],
+    };
+    const rules: string[] = [];
+    for (const [t, c] of Object.entries(th)) {
+      rules.push(
+        `html[data-theme="${t}"]{--tb:${c[0]};--tc:${c[1]};--t2:${c[2]};--tl:${c[3]};--th:${c[4]}}`,
+        `html[data-theme="${t}"] .bg-\\[\\#0b0e1a\\],html[data-theme="${t}"] .bg-\\[\\#0a0d18\\],html[data-theme="${t}"] .bg-\\[\\#080b17\\]{background:${c[0]}!important}`,
+        `html[data-theme="${t}"] .bg-\\[\\#161929\\],html[data-theme="${t}"] .bg-\\[\\#151828\\]{background:${c[1]}!important}`,
+        `html[data-theme="${t}"] .bg-\\[\\#1a1e30\\]{background:${c[2]}!important}`,
+        `html[data-theme="${t}"] .border-\\[\\#252a3d\\],html[data-theme="${t}"] .border-\\[\\#1e2235\\]{border-color:${c[3]}!important}`,
+        `html[data-theme="${t}"] .bg-\\[\\#1a1f35\\]{background:${c[4]}!important}`,
+        `html[data-theme="${t}"] .bg-\\[\\#0d1117\\]{background:${c[2]}!important}`,
+      );
+    }
+    style.textContent = rules.join("");
     document.head.appendChild(style);
   }, []);
-  // Update data-theme and CSS variables on change
+  // Update data-theme on change
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", themeColor);
-    const hslMap: Record<string, string> = { cyan:"187 100% 50%", pink:"330 100% 50%", gold:"51 100% 50%", green:"162 100% 50%", purple:"270 91% 65%" };
-    const h = hslMap[themeColor] ?? "187 100% 50%";
-    document.documentElement.style.setProperty("--primary", h);
-    document.documentElement.style.setProperty("--ring", h);
   }, [themeColor]);
   const [showThemePicker, setShowThemePicker] = useState(false);
   const nextCloseRef = useRef<number>(0);
@@ -1138,8 +1141,8 @@ export default function Dashboard() {
         {showThemePicker && (
           <div className="flex gap-2 mt-1.5">
             {(["cyan","pink","gold","green","purple"] as const).map(c => {
-              const colors: Record<string, string> = {
-                cyan: "#00f0ff", pink: "#ff0080", gold: "#ffd700", green: "#00ff88", purple: "#a855f7"
+              const bgColors: Record<string, string> = {
+                cyan: "#0b0e1a", pink: "#120a14", gold: "#0f0e08", green: "#080f0a", purple: "#0c0814"
               };
               return (
                 <button
@@ -1148,8 +1151,8 @@ export default function Dashboard() {
                   className={`w-6 h-6 rounded-full border-2 transition-all ${
                     themeColor === c ? "border-white scale-110" : "border-white/20 hover:scale-105"
                   }`}
-                  style={{ backgroundColor: colors[c] }}
-                  title={c}
+                  style={{ backgroundColor: bgColors[c] }}
+                  title={{ cyan:"赛博", pink:"暗紫", gold:"暗金", green:"暗绿", purple:"深紫" }[c]}
                 />
               );
             })}
