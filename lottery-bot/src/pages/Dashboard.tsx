@@ -999,7 +999,7 @@ export default function Dashboard() {
           }
         }
         if (ev.type === "balance:update") {
-          setStatus(prev => prev ? { ...prev, balance: ev.balance as number, balanceSource: ev.balanceSource as string, balanceUpdatedAt: ev.balanceUpdatedAt as number } : prev);
+          setStatus(prev => prev ? { ...prev, balanceKk: ev.balanceKk as number, balanceUsdt: ev.balanceUsdt as number, balanceCny: ev.balanceCny as number, balance: ev.balance as number, balanceSource: ev.balanceSource as string, balanceUpdatedAt: ev.balanceUpdatedAt as number } : prev);
         }
         if (ev.type === "chase:won_stop") {
           // 追号中奖，后端已自动关闭 enableChase，刷新 status 以同步配置
@@ -1193,6 +1193,26 @@ export default function Dashboard() {
               </div>
               <div className="text-3xl font-bold text-emerald-400 mb-3">
                 {(status.balance ?? 0).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </div>
+              <div className="flex gap-3 text-xs mt-2">
+                {status.balanceKk != null && status.balanceKk > 0 && (
+                  <div className="bg-[#0d1117] rounded-lg px-2 py-1 text-center">
+                    <div className="text-yellow-400 font-bold font-mono">{status.balanceKk.toLocaleString("zh-CN", { maximumFractionDigits: 0 })}</div>
+                    <div className="text-slate-500 text-[10px]">KK</div>
+                  </div>
+                )}
+                {status.balanceUsdt != null && status.balanceUsdt > 0 && (
+                  <div className="bg-[#0d1117] rounded-lg px-2 py-1 text-center">
+                    <div className="text-emerald-400 font-bold font-mono">{status.balanceUsdt.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                    <div className="text-slate-500 text-[10px]">USDT</div>
+                  </div>
+                )}
+                {status.balanceCny != null && status.balanceCny > 0 && (
+                  <div className="bg-[#0d1117] rounded-lg px-2 py-1 text-center">
+                    <div className="text-blue-400 font-bold font-mono">{status.balanceCny.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                    <div className="text-slate-500 text-[10px]">CNY</div>
+                  </div>
+                )}
               </div>
               <div className="flex gap-4 text-sm">
                 <div>

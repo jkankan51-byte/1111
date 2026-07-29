@@ -1,5 +1,5 @@
 -- ============================================================
--- 暗影飞投 - 数据库初始化脚本
+-- 暴击飞投 - 数据库初始化脚本
 -- 使用方式: psql -U <username> -d <database> -f init.sql
 -- ============================================================
 
@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS shop_config (
   kkpay_id TEXT NOT NULL DEFAULT '',
   kkpay_secret TEXT NOT NULL DEFAULT '',
   domain TEXT NOT NULL DEFAULT '',
-  product_name TEXT NOT NULL DEFAULT '暗影飞投-卡密',
+  product_name TEXT NOT NULL DEFAULT '暴击飞投-卡密',
   price_daily_usdt TEXT NOT NULL DEFAULT '1',
   price_weekly_usdt TEXT NOT NULL DEFAULT '5',
   price_monthly_usdt TEXT NOT NULL DEFAULT '15',

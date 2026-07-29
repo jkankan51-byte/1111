@@ -363,6 +363,9 @@ export interface TgSession {
   globalHandlerBuilder: NewMessage | null;
   // balance
   balance: number;
+  balanceKk: number;
+  balanceUsdt: number;
+  balanceCny: number;
   todayPnl: number;
   todayResetAt: number;
   balanceSource: "manual" | "kkpay";
@@ -413,6 +416,9 @@ interface PersistedData {
   sessionString: string;
   phone: string;
   balance: number;
+  balanceKk: number;
+  balanceUsdt: number;
+  balanceCny: number;
   todayPnl: number;
   todayResetAt: number;
   sessionPnl: number;
@@ -835,6 +841,9 @@ function saveSession(session: TgSession): void {
       sessionString: session.stringSession.save(),
       phone: session.phone,
       balance: session.balance,
+      balanceKk: session.balanceKk,
+      balanceUsdt: session.balanceUsdt,
+      balanceCny: session.balanceCny,
       todayPnl: session.todayPnl,
       todayResetAt: session.todayResetAt,
       sessionPnl: session.sessionPnl,
@@ -1013,6 +1022,9 @@ function destroySession(session: TgSession, reason: string): void {
       sessionString: "",           // 清空 auth key，强制重新登录
       phone: session.phone ?? "",
       balance: session.balance,
+      balanceKk: session.balanceKk,
+      balanceUsdt: session.balanceUsdt,
+      balanceCny: session.balanceCny,
       todayPnl: session.todayPnl,
       todayResetAt: session.todayResetAt,
       sessionPnl: session.sessionPnl,
@@ -1269,9 +1281,16 @@ setInterval(async () => {
 
 // ─── Balance parsing ──────────────────────────────────────────────────────────
 
-function parseBalance(text: string): number | null {
-  const patterns = [
-    /KKCOIN\s*[：:]\s*([\d,]+\.?\d*)/i,
+function parseBalance(text: string): { kk: number | null; usdt: number | null; cny: number | null } {
+  const result = { kk: null as number | null, usdt: null as number | null, cny: null as number | null };
+  // Match KKCOIN
+  const kkM = text.match(/KKCOIN\s*[：:]\s*([\d,]+\.?\d*)/i);
+  if (kkM) { const v = parseFloat(kkM[1].replace(/,/g, "")); if (!isNaN(v) && v >= 0) result.kk = v; }
+  // Match USDT
+  const usdtM = text.match(/USDT\s*[：:]\s*([\d,]+\.?\d*)/i);
+  if (usdtM) { const v = parseFloat(usdtM[1].replace(/,/g, "")); if (!isNaN(v) && v >= 0) result.usdt = v; }
+  // Match CNY (various patterns)
+  const cnyPatterns = [
     /当前余额[：:\s]*[¥￥]?\s*([\d,]+\.?\d*)/i,
     /(?:可用|账[户号])?余额[：:\s]*[¥￥]?\s*([\d,]+\.?\d*)/i,
     /balance[：:\s]*[¥￥]?\s*([\d,]+\.?\d*)/i,
@@ -1279,15 +1298,18 @@ function parseBalance(text: string): number | null {
     /剩余[：:\s]*[¥￥]?\s*([\d,]+\.?\d*)/i,
     /总资产[：:\s]*[¥￥]?\s*([\d,]+\.?\d*)/i,
     /钱包余额[：:\s]*[¥￥]?\s*([\d,]+\.?\d*)/i,
+    /CNY\s*[：:]\s*([\d,]+\.?\d*)/i,
   ];
-  for (const p of patterns) {
+  for (const p of cnyPatterns) {
     const m = text.match(p);
-    if (m) {
-      const val = parseFloat(m[1].replace(/,/g, ""));
-      if (!isNaN(val) && val >= 0) return val;
-    }
+    if (m) { const v = parseFloat(m[1].replace(/,/g, "")); if (!isNaN(v) && v >= 0) { result.cny = v; break; } }
   }
-  return null;
+  // Also check for plain numbers after 余额/balance if no currency specified
+  if (result.kk === null && result.usdt === null && result.cny === null) {
+    const fallback = text.match(/(?:余额|balance|剩余)[：:\s]*([\d,]+\.?\d*)/i);
+    if (fallback) { const v = parseFloat(fallback[1].replace(/,/g, "")); if (!isNaN(v) && v >= 0) result.cny = v; }
+  }
+  return result;
 }
 
 async function sendYeForBalance(session: TgSession): Promise<void> {
@@ -1302,13 +1324,18 @@ async function sendYeForBalance(session: TgSession): Promise<void> {
 }
 
 function updateBalance(session: TgSession, text: string): void {
-  const bal = parseBalance(text);
-  if (bal === null) return;
-  session.balance = bal;
+  const parsed = parseBalance(text);
+  if (parsed.kk === null && parsed.usdt === null && parsed.cny === null) return;
+  if (parsed.kk !== null) session.balanceKk = parsed.kk;
+  if (parsed.usdt !== null) session.balanceUsdt = parsed.usdt;
+  if (parsed.cny !== null) { session.balanceCny = parsed.cny; session.balance = parsed.cny; }
   session.balanceSource = "kkpay";
   session.balanceUpdatedAt = Date.now();
   pushEvent(session, "balance:update", {
-    balance: bal,
+    balanceKk: session.balanceKk,
+    balanceUsdt: session.balanceUsdt,
+    balanceCny: session.balanceCny,
+    balance: session.balance,
     balanceSource: "kkpay",
     balanceUpdatedAt: session.balanceUpdatedAt,
   });
@@ -5730,6 +5757,9 @@ router.get("/tg/status", requireCard, (req, res) => {
     sessionPnl: session.sessionPnl,
     currentBet: session.currentBet,
     balance: session.balance,
+    balanceKk: session.balanceKk,
+    balanceUsdt: session.balanceUsdt,
+    balanceCny: session.balanceCny,
     todayPnl: session.todayPnl,
     balanceSource: session.balanceSource,
     balanceUpdatedAt: session.balanceUpdatedAt,
