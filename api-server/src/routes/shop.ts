@@ -278,7 +278,7 @@ router.post("/shop/create-order", requireAuth, async (req, res) => {
     const price = priceMap[cardType]!;
     const orderId = randomUUID();
 
-    const timestamp = Date.now();
+    const timestamp = Math.floor(Date.now() / 1000);
     const nonce = Math.random().toString(36).slice(2, 10);
     const payload = JSON.stringify({
       userOrder: orderId,
@@ -524,7 +524,7 @@ router.post("/shop/tg-webhook", async (req, res) => {
       const orderId = randomUUID();
       const price = priceMap[cardType]!;
 
-      const timestamp2 = Date.now();
+      const timestamp2 = Math.floor(Date.now() / 1000);
       const nonce2 = Math.random().toString(36).slice(2, 10);
       const payload = JSON.stringify({
         userOrder: orderId,
