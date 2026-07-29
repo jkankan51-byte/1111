@@ -53,32 +53,23 @@ export default function LoginPage() {
         <div className="text-center mb-8">
           <div className="flex justify-center mb-4">
             <div className="relative w-16 h-16">
-              <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full h-full drop-shadow-lg">
+              <svg viewBox="0 0 40 40" className="w-full h-full" fill="none">
                 <defs>
-                  <radialGradient id="bg" cx="50%" cy="40%" r="55%">
-                    <stop offset="0%" stopColor="#4f46e5" />
-                    <stop offset="100%" stopColor="#1e1b4b" />
-                  </radialGradient>
-                  <radialGradient id="glow" cx="50%" cy="50%" r="50%">
-                    <stop offset="0%" stopColor="#818cf8" stopOpacity="0.4" />
-                    <stop offset="100%" stopColor="#818cf8" stopOpacity="0" />
-                  </radialGradient>
-                  <linearGradient id="wing" x1="0%" y1="0%" x2="100%" y2="100%">
-                    <stop offset="0%" stopColor="#a5b4fc" />
-                    <stop offset="100%" stopColor="#6366f1" />
-                  </linearGradient>
+                  <filter id="glow">
+                    <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
+                    <feMerge>
+                      <feMergeNode in="coloredBlur"/>
+                      <feMergeNode in="SourceGraphic"/>
+                    </feMerge>
+                  </filter>
                 </defs>
-                <circle cx="32" cy="32" r="30" fill="url(#bg)" />
-                <circle cx="32" cy="32" r="30" fill="url(#glow)" />
-                <circle cx="32" cy="32" r="29" stroke="#6366f1" strokeWidth="0.8" strokeOpacity="0.6" />
-                <path d="M14 34 Q24 22 36 28 Q44 32 50 26 Q46 36 36 36 Q28 36 22 40 Z" fill="url(#wing)" opacity="0.9" />
-                <path d="M18 38 Q26 30 34 34 Q40 37 46 32 Q43 40 34 40 Q26 40 20 44 Z" fill="#c7d2fe" opacity="0.4" />
-                <circle cx="32" cy="32" r="3" fill="#e0e7ff" />
+                <path d="M20 2 L8 22 L18 22 L14 38 L32 16 L22 16 L26 2 Z" 
+                  fill="#00f0ff" filter="url(#glow)"/>
               </svg>
             </div>
           </div>
-          <h1 className="text-2xl font-bold text-white tracking-wide">暗影-飞投</h1>
-          <p className="text-slate-400 text-sm mt-1">智能投注管理平台</p>
+          <h1 className="text-2xl font-bold text-white tracking-wide">暴击-飞投</h1>
+          <p className="text-slate-400 text-sm mt-1">赛博投注引擎</p>
         </div>
 
         <div className="bg-[#161929] border border-[#252a3d] rounded-2xl p-6 shadow-xl">
