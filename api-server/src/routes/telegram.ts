@@ -3345,46 +3345,92 @@ function parseBetLabel(text: string): string | null {
 
 function runAlgo(session: TgSession, algoId: AlgorithmId, labels: string[], signalText = ""): string | null {
   if (algoId === "algo_dim") {
-    // 维度智选：只从用户选择的 labels 中分析走势决策
+    // 大小单双AI：识别龙型/震荡/ABAB/AABAAB/BBABBA，不反龙
     const history = buildHistory(session);
-    const recent = history.slice(-8);
+    const recent = history.slice(-10);
+    // 只考虑用户选中的 labels
     const hasSize = labels.some(l => l === "大" || l === "小");
     const hasParity = labels.some(l => l === "单" || l === "双");
-    if (hasSize && hasParity) {
-      // 大小和单双都选了 → 选信号更清晰的维度
-      let big = 0, small = 0, odd = 0, even = 0;
-      for (const r of recent) {
-        if (r === "大" || r.startsWith("大")) big++;
-        else if (r === "小" || r.startsWith("小")) small++;
-        if (r.endsWith("单")) odd++;
-        else if (r.endsWith("双")) even++;
-      }
-      const sizeAlt = Math.abs(big - small);
-      const parityAlt = Math.abs(odd - even);
-      if (sizeAlt >= parityAlt) {
-        // 大小维度信号更清晰
-        return labels.includes(big <= small ? "大" : "小") ? (big <= small ? "大" : "小") : labels[0]!;
-      } else {
-        return labels.includes(odd <= even ? "单" : "双") ? (odd <= even ? "单" : "双") : labels[0]!;
-      }
-    } else if (hasSize) {
-      // 只选了大小 → 只打大小
-      let big = 0, small = 0;
-      for (const r of recent) {
-        if (r === "大" || r.startsWith("大")) big++;
-        else if (r === "小" || r.startsWith("小")) small++;
-      }
-      return labels.includes(big <= small ? "大" : "小") ? (big <= small ? "大" : "小") : labels[0]!;
-    } else if (hasParity) {
-      // 只选了单双 → 只打单双
-      let odd = 0, even = 0;
-      for (const r of recent) {
-        if (r.endsWith("单")) odd++;
-        else if (r.endsWith("双")) even++;
-      }
-      return labels.includes(odd <= even ? "单" : "双") ? (odd <= even ? "单" : "双") : labels[0]!;
+    // 提取需要分析的历史序列（映射到大小或单双维度）
+    function seqFrom(dim: "size" | "parity"): string[] {
+      return recent.map(r => {
+        if (dim === "size") return (r === "大" || r.startsWith("大")) ? "大" : (r === "小" || r.startsWith("小")) ? "小" : "";
+        return r.endsWith("单") ? "单" : r.endsWith("双") ? "双" : "";
+      }).filter(Boolean);
     }
-    // 都不是（如双组模式标签）→ 从 labels 随机
+    function pickFrom(dim: "size" | "parity", labels: string[]): string | null {
+      const seq = seqFrom(dim);
+      if (seq.length < 3) return null;
+      const last = seq[seq.length - 1]!;
+      const prev = seq[seq.length - 2]!;
+      const pprev = seq[seq.length - 3]!;
+      // 1. 长龙检测 (≥4连): 跟龙
+      const streak = seq.slice(-4);
+      if (streak.every(s => s === streak[0])) {
+        // 龙继续, 不反龙
+        const dir = dim === "size" ? streak[0] : streak[0];
+        return labels.includes(dir) ? dir : null;
+      }
+      // 2. AABAAB / BBABBA 模式检测 (6期周期)
+      if (seq.length >= 6) {
+        const last6 = seq.slice(-6);
+        // AABAAB pattern: 前3期两同一异, 后3期重复
+        if (last6[0] === last6[1] && last6[1] !== last6[2] &&
+            last6[3] === last6[4] && last6[4] !== last6[5] &&
+            last6[0] === last6[3] && last6[2] === last6[5]) {
+          const dir = last6[0]!; // 下一期预测为A
+          return labels.includes(dir) ? dir : null;
+        }
+        // BBABBA pattern (AABAAB 的反相)
+        if (last6[0] === last6[1] && last6[1] !== last6[2] &&
+            last6[3] === last6[4] && last6[4] !== last6[5] &&
+            last6[0] !== last6[3] && last6[2] !== last6[5]) {
+          const dir = last6[3]!; // 下一期预测为第三个
+          return labels.includes(dir) ? dir : null;
+        }
+      }
+      // 3. ABAB 交替检测
+      if (seq.length >= 4) {
+        const last4 = seq.slice(-4);
+        if (last4[0] !== last4[1] && last4[1] === last4[3] && last4[0] === last4[2]) {
+          // ABAB pattern 继续
+          const dir = last4[1]!; // 下一期预测为 B
+          return labels.includes(dir) ? dir : null;
+        }
+      }
+      // 4. 震荡检测 (近6期交替占比≥60% → 跟震荡)
+      if (seq.length >= 4) {
+        let alt = 0;
+        for (let i = 1; i < Math.min(seq.length, 6); i++) if (seq[i] !== seq[i - 1]) alt++;
+        const altRatio = alt / Math.min(seq.length - 1, 5);
+        if (altRatio >= 0.6) {
+          // 震荡 → 下期反向上期
+          const dir = last === "大" || last === "单"
+            ? (dim === "size" ? "小" : "双")
+            : (dim === "size" ? "大" : "单");
+          return labels.includes(dir) ? dir : null;
+        }
+      }
+      // 5. 默认: 跟冷（出现少的）
+      const cnt: Record<string, number> = {};
+      for (const s of seq) cnt[s] = (cnt[s] ?? 0) + 1;
+      const sorted = Object.entries(cnt).sort((a, b) => a[1] - b[1]);
+      const dir = sorted[0]?.[0] ?? null;
+      return dir && labels.includes(dir) ? dir : null;
+    }
+    if (hasSize && hasParity) {
+      // 两维都选 → 优先选更清晰的维度
+      const sizeSeq = seqFrom("size");
+      const paritySeq = seqFrom("parity");
+      const sizeAlt = sizeSeq.length >= 4 ? sizeSeq.slice(-4).filter((s,i,a) => i>0 && s!==a[i-1]).length / 3 : 0;
+      const parityAlt = paritySeq.length >= 4 ? paritySeq.slice(-4).filter((s,i,a) => i>0 && s!==a[i-1]).length / 3 : 0;
+      // 震荡越少 = 信号越清晰
+      const sizeSignal = 1 - sizeAlt;
+      const paritySignal = 1 - parityAlt;
+      return pickFrom(sizeSignal >= paritySignal ? "size" : "parity", labels);
+    }
+    if (hasSize) return pickFrom("size", labels);
+    if (hasParity) return pickFrom("parity", labels);
     return labels[Math.floor(Math.random() * labels.length)] ?? null;
   }
   if (algoId === "algo_dual_group") {

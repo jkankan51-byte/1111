@@ -18,9 +18,9 @@ interface DrawState {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const ALGO_LABELS: Record<string, string> = {
-  algo_dim:        "通用-维度智选",
-  algo_dual_group: "通用-双组模式",
-  algo_7d:         "通用-七维算法",
+  algo_dim:        "大小单双AI",
+  algo_dual_group: "双组AI",
+  algo_7d:         "杀组专用",
 };
 
 const REMOVED_CANADA_ALGOS = new Set<string>();
@@ -806,36 +806,38 @@ export default function Dashboard() {
   const [toggleLoading, setToggleLoading] = useState(false);
   const [clearLoading, setClearLoading] = useState(false);
   const [sseAlert, setSseAlert] = useState<string | null>(null);
-  const [themeColor, setThemeColor] = useState(() => { try { return localStorage.getItem("themeColor") || "cyan"; } catch { return "cyan"; } });
-  // Inject theme stylesheet once on mount — changes the DARK BACKGROUND color
+  const [themeColor, setThemeColor] = useState(() => { try { return localStorage.getItem("themeColor") || "dark"; } catch { return "dark"; } });
+  // Inject theme stylesheet once on mount
   useEffect(() => {
     if (document.getElementById("theme-style")) return;
     const style = document.createElement("style");
     style.id = "theme-style";
-    // Each theme maps[0]=bg, [1]=card, [2]=card2, [3]=border, [4]=headerBg
-    const th: Record<string,string[]> = {
-      cyan:  ["#0b0e1a","#161929","#1a1e30","#252a3d","#1a1f35"],
-      pink:  ["#120a14","#1f1425","#25182d","#35233e","#2a1a33"],
-      gold:  ["#0f0e08","#1d1a10","#262113","#35301d","#2a2615"],
-      green: ["#080f0a","#0f1f14","#142618","#213524","#182a1c"],
-      purple:["#0c0814","#141025","#1a1530","#282142","#1f1835"],
-    };
-    const rules: string[] = [];
-    for (const [t, c] of Object.entries(th)) {
-      rules.push(
-        `html[data-theme="${t}"]{--tb:${c[0]};--tc:${c[1]};--t2:${c[2]};--tl:${c[3]};--th:${c[4]}}`,
-        `html[data-theme="${t}"] .bg-\\[\\#0b0e1a\\],html[data-theme="${t}"] .bg-\\[\\#0a0d18\\],html[data-theme="${t}"] .bg-\\[\\#080b17\\]{background:${c[0]}!important}`,
-        `html[data-theme="${t}"] .bg-\\[\\#161929\\],html[data-theme="${t}"] .bg-\\[\\#151828\\]{background:${c[1]}!important}`,
-        `html[data-theme="${t}"] .bg-\\[\\#1a1e30\\]{background:${c[2]}!important}`,
-        `html[data-theme="${t}"] .border-\\[\\#252a3d\\],html[data-theme="${t}"] .border-\\[\\#1e2235\\]{border-color:${c[3]}!important}`,
-        `html[data-theme="${t}"] .bg-\\[\\#1a1f35\\]{background:${c[4]}!important}`,
-        `html[data-theme="${t}"] .bg-\\[\\#0d1117\\]{background:${c[2]}!important}`,
-      );
-    }
-    style.textContent = rules.join("");
+    style.textContent = [
+      // Dark theme (深色)
+      'html[data-theme="dark"]{--tb:#0b0e1a;--tc:#161929;--t2:#1a1e30;--tl:#252a3d;--th:#1a1f35;--tf:#e0e0e0}',
+      'html[data-theme="dark"] .bg-\\[\\#0b0e1a\\],html[data-theme="dark"] .bg-\\[\\#0a0d18\\]{background:#0b0e1a!important}',
+      'html[data-theme="dark"] .bg-\\[\\#161929\\]{background:#161929!important}',
+      'html[data-theme="dark"] .bg-\\[\\#1a1e30\\]{background:#1a1e30!important}',
+      'html[data-theme="dark"] .border-\\[\\#252a3d\\],html[data-theme="dark"] .border-\\[\\#1e2235\\]{border-color:#252a3d!important}',
+      'html[data-theme="dark"] .bg-\\[\\#1a1f35\\]{background:#1a1f35!important}',
+      'html[data-theme="dark"] .bg-\\[\\#0d1117\\]{background:#0d1117!important}',
+      'html[data-theme="dark"] .text-slate-400,.text-slate-500{color:#94a3b8!important}',
+      // Light theme (白色)
+      'html[data-theme="light"]{--tb:#f5f5f5;--tc:#ffffff;--t2:#f0f0f0;--tl:#e0e0e0;--th:#e8e8e8;--tf:#1a1a1a}',
+      'html[data-theme="light"]{background:#f5f5f5!important}',
+      'html[data-theme="light"] .bg-\\[\\#0b0e1a\\],html[data-theme="light"] .bg-\\[\\#0a0d18\\]{background:#f5f5f5!important;color:#1a1a1a!important}',
+      'html[data-theme="light"] .bg-\\[\\#161929\\]{background:#ffffff!important;color:#1a1a1a!important}',
+      'html[data-theme="light"] .bg-\\[\\#1a1e30\\]{background:#f0f0f0!important;color:#1a1a1a!important}',
+      'html[data-theme="light"] .border-\\[\\#252a3d\\],html[data-theme="light"] .border-\\[\\#1e2235\\]{border-color:#e0e0e0!important}',
+      'html[data-theme="light"] .bg-\\[\\#1a1f35\\]{background:#e8e8e8!important;color:#1a1a1a!important}',
+      'html[data-theme="light"] .bg-\\[\\#0d1117\\]{background:#e0e0e0!important;color:#1a1a1a!important}',
+      'html[data-theme="light"] .text-white{color:#1a1a1a!important}',
+      'html[data-theme="light"] .text-slate-400{color:#64748b!important}',
+      'html[data-theme="light"] .text-slate-500{color:#94a3b8!important}',
+    ].join("");
     document.head.appendChild(style);
   }, []);
-  // Update data-theme on change
+  // Update data-theme
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", themeColor);
   }, [themeColor]);
@@ -1140,20 +1142,24 @@ export default function Dashboard() {
         </button>
         {showThemePicker && (
           <div className="flex gap-2 mt-1.5">
-            {(["cyan","pink","gold","green","purple"] as const).map(c => {
-              const bgColors: Record<string, string> = {
-                cyan: "#0b0e1a", pink: "#120a14", gold: "#0f0e08", green: "#080f0a", purple: "#0c0814"
-              };
+            {(["dark","light"] as const).map(c => {
+              const bgColors: Record<string, string> = { dark: "#0b0e1a", light: "#f5f5f5" };
+              const labels: Record<string, string> = { dark: "深色", light: "白色" };
               return (
                 <button
                   key={c}
                   onClick={() => { setThemeColor(c); try { localStorage.setItem("themeColor", c); } catch {} }}
-                  className={`w-6 h-6 rounded-full border-2 transition-all ${
-                    themeColor === c ? "border-white scale-110" : "border-white/20 hover:scale-105"
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-all ${
+                    themeColor === c
+                      ? "border-white scale-105 bg-white/10"
+                      : "border-white/20 hover:scale-105"
                   }`}
-                  style={{ backgroundColor: bgColors[c] }}
-                  title={{ cyan:"赛博", pink:"暗紫", gold:"暗金", green:"暗绿", purple:"深紫" }[c]}
-                />
+                  title={labels[c]}
+                >
+                  <span className={`w-3.5 h-3.5 rounded-full border ${c === "dark" ? "border-white/30" : "border-slate-300"}`}
+                    style={{ backgroundColor: bgColors[c] }} />
+                  {labels[c]}
+                </button>
               );
             })}
           </div>
