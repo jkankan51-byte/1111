@@ -18,30 +18,15 @@ interface DrawState {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const ALGO_LABELS: Record<string, string> = {
-  signal_follow:    "通用-跟信号",
-  signal_reverse:   "通用-反信号",
-  abc_trend:        "加拿大-ABC走势",
-  abc_digit_ai:     "加拿大-ABC三位数字AI",
-  abc_digit_cycle_ai:"加拿大-ABC轮打AI",
-  private_combo_ai: "加拿大-新群综合AI",
+  algo_big:        "通用-大",
+  algo_small:      "通用-小",
+  algo_odd:        "通用-单",
+  algo_even:       "通用-双",
+  algo_dual_group: "通用-双组模式",
+  algo_kill_group: "通用-四组杀组模式",
 };
 
-const REMOVED_CANADA_ALGOS = new Set([
-  "canada_clone_1",
-  "canada_pro_1",
-  "canada_pro_2",
-  "canada_pro_3",
-  "canada_pro_4",
-  "canada_pro_5",
-  "canada_pro_6",
-  "canada_pro_7",
-  "canada_pro_8",
-  "canada_pro_9",
-  "canada_pro_10",
-  "canada_kill",
-  "canada_kill_plus",
-  "canada_smart_plus",
-]);
+const REMOVED_CANADA_ALGOS = new Set<string>();
 
 const VISIBLE_ALGO_LABELS = Object.fromEntries(
   Object.entries(ALGO_LABELS).filter(([algoId]) => !REMOVED_CANADA_ALGOS.has(algoId)),
@@ -55,7 +40,7 @@ function normalizeAlgos(a: string[]) {
     .filter(x => AVAILABLE_ALGOS.has(x))
     .filter((x, index, arr) => arr.indexOf(x) === index);
   if (filtered.length > 0) return filtered;
-  return ["abc_trend"];
+  return ["algo_big"];
 }
 
 function normalizeChaseNumbers(entries: Array<{ num: string; amount: string }>, chaseDoubleOnLoss: boolean) {
@@ -824,6 +809,8 @@ export default function Dashboard() {
   const [toggleLoading, setToggleLoading] = useState(false);
   const [clearLoading, setClearLoading] = useState(false);
   const [sseAlert, setSseAlert] = useState<string | null>(null);
+  const [themeColor, setThemeColor] = useState(() => { try { return localStorage.getItem("themeColor") || "cyan"; } catch { return "cyan"; } });
+  const [showThemePicker, setShowThemePicker] = useState(false);
   const nextCloseRef = useRef<number>(0);
   const sseRef = useRef<EventSource | null>(null);
   const statusInFlightRef = useRef<Promise<void> | null>(null);
@@ -1075,7 +1062,7 @@ export default function Dashboard() {
   // ─── Render ──────────────────────────────────────────────────────────────
 
   return (
-    <div className="min-h-screen bg-[#0b0e1a] text-white">
+    <div className={`min-h-screen bg-[#0b0e1a] text-white theme-${themeColor}`}>
       {/* SSE Alert Banner */}
       {sseAlert && (
         <div className="sticky top-0 z-50 bg-red-900/90 border-b border-red-700 px-4 py-3 flex items-start gap-3 backdrop-blur">
@@ -1113,6 +1100,36 @@ export default function Dashboard() {
             </button>
           </div>
         </div>
+      {/* Color Theme Picker */}
+      <div className="max-w-lg mx-auto px-4 pb-2">
+        <button
+          onClick={() => setShowThemePicker(v => !v)}
+          className="text-xs text-slate-500 hover:text-slate-300 flex items-center gap-1 transition"
+        >
+          <span>🎨</span> 主题配色
+          <span className={`text-[10px] transition-transform ${showThemePicker ? "rotate-180" : ""}`}>▼</span>
+        </button>
+        {showThemePicker && (
+          <div className="flex gap-2 mt-1.5">
+            {(["cyan","pink","gold","green","purple"] as const).map(c => {
+              const colors: Record<string, string> = {
+                cyan: "#00f0ff", pink: "#ff0080", gold: "#ffd700", green: "#00ff88", purple: "#a855f7"
+              };
+              return (
+                <button
+                  key={c}
+                  onClick={() => { setThemeColor(c); try { localStorage.setItem("themeColor", c); } catch {} }}
+                  className={`w-6 h-6 rounded-full border-2 transition-all ${
+                    themeColor === c ? "border-white scale-110" : "border-white/20 hover:scale-105"
+                  }`}
+                  style={{ backgroundColor: colors[c] }}
+                  title={c}
+                />
+              );
+            })}
+          </div>
+        )}
+      </div>
       </div>
 
       <div className="max-w-lg mx-auto px-4 py-4 space-y-3 pb-24">

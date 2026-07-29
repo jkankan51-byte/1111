@@ -207,13 +207,7 @@ function parseCanadaBotConfirm(text: string, senderName: string, groupId?: strin
 
 type BetStrategy = "normal" | "martingale" | "anti-martingale";
 type BetOption = "big" | "small" | "odd" | "even" | "big-odd" | "big-even" | "small-odd" | "small-even";
-type AlgorithmId = "signal_follow" | "signal_reverse" | "streak_follow" | "cold_pick" | "random"
-  | "dragon_ride" | "dragon_break" | "momentum" | "anti_streak" | "adaptive_switch"
-  | "private_combo_ai"
-  | "canada_clone_1"
-  | "canada_pro_1" | "canada_pro_2" | "canada_pro_3" | "canada_pro_4" | "canada_pro_5"
-  | "canada_pro_6" | "canada_pro_7" | "canada_pro_8" | "canada_pro_9" | "canada_pro_10"
-  | "canada_kill" | "canada_kill_plus" | "canada_smart_plus" | "abc_trend" | "abc_digit_ai" | "abc_digit_cycle_ai";
+type AlgorithmId = "algo_big" | "algo_small" | "algo_odd" | "algo_even" | "algo_dual_group" | "algo_kill_group";
 
 interface BetCfg {
   autoBet: boolean;
@@ -251,20 +245,12 @@ interface BetCfg {
 }
 
 const ACTIVE_ALGORITHMS = new Set<AlgorithmId>([
-  "signal_follow",
-  "signal_reverse",
-  "streak_follow",
-  "cold_pick",
-  "random",
-  "dragon_ride",
-  "dragon_break",
-  "momentum",
-  "anti_streak",
-  "adaptive_switch",
-  "private_combo_ai",
-  "abc_trend",
-  "abc_digit_ai",
-  "abc_digit_cycle_ai",
+  "algo_big",
+  "algo_small",
+  "algo_odd",
+  "algo_even",
+  "algo_dual_group",
+  "algo_kill_group",
 ]);
 
 function sanitizeAlgorithms(algos: AlgorithmId[] | undefined): AlgorithmId[] {
@@ -272,7 +258,7 @@ function sanitizeAlgorithms(algos: AlgorithmId[] | undefined): AlgorithmId[] {
     .filter(algo => ACTIVE_ALGORITHMS.has(algo))
     .filter((algo, index, arr) => arr.indexOf(algo) === index);
   if (filtered.length > 0) return filtered;
-  return ["abc_trend"];
+  return ["algo_big"];
 }
 
 function sanitizeCfg(cfg: BetCfg): BetCfg {
@@ -399,6 +385,7 @@ export interface TgSession {
   lastSeenLotteryPeriod: number;
   lastSignalText: string;
   lastAIBet: string | null;
+  lastDualGroup: "A" | "B" | null;
   lastRawAlgoDir: string | null; // raw algo direction before flip
   lastStructuredBetLabels?: StructuredBetLabelInfo[];
   algoFlipCooldown: number;      // remaining bets in flip cooldown (re-eval blocked)
@@ -1152,6 +1139,7 @@ async function restoreUserSession(userId: number, file: string): Promise<void> {
     currentCloseTimeMs: 0,
     lastSignalText: "",
     lastAIBet: null,
+    lastDualGroup: null,
     lastRawAlgoDir: null,
     algoFlipCooldown: 0,
     adaptiveSwitchKillMode: false,
@@ -2024,11 +2012,12 @@ function decidePrivateMonitorComboBet(session: TgSession): string | null {
 type MarketPattern = "streak" | "oscillating" | "neutral";
 
 /** 长龙形态适用算法 */
-const STREAK_ALGOS: AlgorithmId[] = ["streak_follow", "dragon_ride", "momentum", "signal_follow", "adaptive_switch", "ks_follow", "ks_bb", "abc_trend"];
+const STREAK_ALGOS: AlgorithmId[] = ["algo_big", "algo_small"];
+const DECIDE_ALGOS: AlgorithmId[] = ["algo_big", "algo_small", "algo_odd", "algo_even"];
 /** 震荡形态适用算法 */
-const OSCILLATING_ALGOS: AlgorithmId[] = ["anti_streak", "dragon_break", "signal_reverse", "ks_reverse", "ks_bb", "abc_trend"];
+const OSCILLATING_ALGOS: AlgorithmId[] = ["algo_odd", "algo_even", "algo_dual_group"];
 /** 中性算法（兜底） */
-const NEUTRAL_ALGOS: AlgorithmId[] = ["random", "cold_pick", "ks_smart", "abc_trend"];
+const NEUTRAL_ALGOS: AlgorithmId[] = ["algo_kill_group"];
 
 /**
  * 检测最近 8 期走势形态：
@@ -3358,46 +3347,37 @@ function parseBetLabel(text: string): string | null {
 // ─── Kuaisan & Hash algorithm stubs removed ──────────────────────────────────
 
 function runAlgo(session: TgSession, algoId: AlgorithmId, labels: string[], signalText = ""): string | null {
-  if (algoId === "adaptive_switch") return decideSteady(session); // 大小阶段用升级版AI决策
-  if (algoId === "random") return labels[Math.floor(Math.random() * labels.length)] ?? null;
-  if (algoId === "dragon_ride") return dragonRide(session);
-  if (algoId === "dragon_break") return dragonBreak(session);
-  if (algoId === "momentum") return momentum(session);
-  if (algoId === "anti_streak") return antiStreak(session);
-  if (algoId === "streak_follow") return streakFollow(session);
-  if (algoId === "abc_trend") return decideAbcTrend(session);
-  if (algoId === "canada_pro_1") return runCanadaProAlgo(session, labels, 1);
-  if (algoId === "canada_pro_2") return runCanadaProAlgo(session, labels, 2);
-  if (algoId === "canada_pro_3") return runCanadaProAlgo(session, labels, 3);
-  if (algoId === "canada_pro_4") return runCanadaProAlgo(session, labels, 4);
-  if (algoId === "canada_pro_5") return runCanadaProAlgo(session, labels, 5);
-  if (algoId === "canada_pro_6") return runCanadaProAlgo(session, labels, 6);
-  if (algoId === "canada_pro_7") return runCanadaProAlgo(session, labels, 7);
-  if (algoId === "canada_pro_8") return runCanadaProAlgo(session, labels, 8);
-  if (algoId === "canada_pro_9") return runCanadaProAlgo(session, labels, 9);
-  if (algoId === "canada_pro_10") return runCanadaProAlgo(session, labels, 10);
-  if (algoId === "signal_follow" || algoId === "signal_reverse") {
-    const p = parseBetLabel(signalText);
-    if (!p) return null;
-    // Detect strong oscillation in the current labels dimension
-    const h8sig = [...lotteryHistoryCache, ...session.recentResults].slice(-8);
-    const mappedSig = h8sig.map(r => mapR3ToEnabled(r, labels)).filter((x): x is string => x !== null);
-    let altSig = 0;
-    for (let i = 1; i < mappedSig.length; i++) if (mappedSig[i] !== mappedSig[i - 1]) altSig++;
-    const altRatioSig = mappedSig.length > 1 ? altSig / (mappedSig.length - 1) : 0.5;
-    const strongOscillation = altRatioSig >= 0.75; // ABAB pattern → signal direction will likely flip
-    const strongStreak = altRatioSig <= 0.25;     // streak market → signal direction will likely continue
-    const opp: Record<string, string> = { 大:"小", 小:"大", 单:"双", 双:"单", 大单:"小双", 大双:"小单", 小单:"大双", 小双:"大单" };
-    // signal_follow: follow signal, but auto-flip in strong oscillation (signal = last result = wrong direction)
-    // signal_reverse: counter signal, but skip counter in strong streak (signal = last result = right direction)
-    const baseFollow = algoId === "signal_follow"
-      ? (strongOscillation ? (opp[p] ?? p) : p)   // oscillation: flip
-      : (strongStreak     ? p : (opp[p] ?? p));    // reverse: skip counter in streak
-    const candidate = labels.includes(baseFollow) ? baseFollow : (labels.includes(p) ? p : (labels[0] ?? null));
-    return candidate;
+  if (algoId === "algo_big") return "大";
+  if (algoId === "algo_small") return "小";
+  if (algoId === "algo_odd") return "单";
+  if (algoId === "algo_even") return "双";
+  if (algoId === "algo_dual_group") {
+    // 双组模式：从(大单+小双)和(小单+大双)中选一组
+    const groupA = ["大单", "小双"];
+    const groupB = ["小单", "大双"];
+    const lastGroup = session.lastDualGroup; // 记录上一次选的组
+    const history = buildHistory(session);
+    // 简单交替策略：避免连续同组，看历史结果倾向
+    const recent4 = history.slice(-4);
+    const aCount = recent4.filter(r => groupA.includes(r)).length;
+    const bCount = recent4.filter(r => groupB.includes(r)).length;
+    const pickA = aCount <= bCount;
+    session.lastDualGroup = pickA ? "A" : "B";
+    // 返回组内两注用逗号分隔，发单时拆分
+    return pickA ? "大单,小双" : "小单,大双";
   }
-  const history = buildHistory(session);
-  return freqPick(history, labels, algoId === "cold_pick");
+  if (algoId === "algo_kill_group") {
+    // 四组杀组模式：杀一组投三组
+    // 从(大单/大双/小单/小双)中杀掉最近出现最多的一组
+    const killCandidates = ["大单", "大双", "小单", "小双"];
+    const history = buildHistory(session);
+    const counts = killCandidates.map(d => ({ dir: d, cnt: history.filter(r => r === d).length }));
+    counts.sort((a, b) => b.cnt - a.cnt);
+    const kill = counts[0]!.dir;
+    const remaining = killCandidates.filter(d => d !== kill);
+    return remaining.join(",");
+  }
+  return labels[Math.floor(Math.random() * labels.length)] ?? null;
 }
 
 /** 当连续方向错误 OR 近期胜率过低时，反转算法输出方向（含冷却机制防振荡） */

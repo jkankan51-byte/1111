@@ -146,6 +146,56 @@
   --destructive-border: hsl(var(--destructive));
 }
 
+/* ── Theme variants ──────────────────────────────────────────── */
+.theme-pink {
+  --primary: 330 100% 50%;
+  --ring: 330 100% 50%;
+  --chart-1: 330 100% 50%;
+  --chart-2: 187 100% 50%;
+  --sidebar-primary: 330 100% 50%;
+  --sidebar-ring: 330 100% 50%;
+  --button-outline: rgba(255, 0, 128, 0.15);
+  --badge-outline: rgba(255, 0, 128, 0.08);
+  --elevate-1: rgba(255, 0, 128, 0.04);
+  --elevate-2: rgba(255, 0, 128, 0.09);
+}
+.theme-gold {
+  --primary: 51 100% 50%;
+  --ring: 51 100% 50%;
+  --chart-1: 51 100% 50%;
+  --chart-2: 330 100% 50%;
+  --sidebar-primary: 51 100% 50%;
+  --sidebar-ring: 51 100% 50%;
+  --button-outline: rgba(255, 215, 0, 0.15);
+  --badge-outline: rgba(255, 215, 0, 0.08);
+  --elevate-1: rgba(255, 215, 0, 0.04);
+  --elevate-2: rgba(255, 215, 0, 0.09);
+}
+.theme-green {
+  --primary: 162 100% 50%;
+  --ring: 162 100% 50%;
+  --chart-1: 162 100% 50%;
+  --chart-2: 330 100% 50%;
+  --sidebar-primary: 162 100% 50%;
+  --sidebar-ring: 162 100% 50%;
+  --button-outline: rgba(0, 255, 136, 0.15);
+  --badge-outline: rgba(0, 255, 136, 0.08);
+  --elevate-1: rgba(0, 255, 136, 0.04);
+  --elevate-2: rgba(0, 255, 136, 0.09);
+}
+.theme-purple {
+  --primary: 270 91% 65%;
+  --ring: 270 91% 65%;
+  --chart-1: 270 91% 65%;
+  --chart-2: 187 100% 50%;
+  --sidebar-primary: 270 91% 65%;
+  --sidebar-ring: 270 91% 65%;
+  --button-outline: rgba(168, 85, 247, 0.15);
+  --badge-outline: rgba(168, 85, 247, 0.08);
+  --elevate-1: rgba(168, 85, 247, 0.04);
+  --elevate-2: rgba(168, 85, 247, 0.09);
+}
+
 .dark {
   --button-outline: rgba(0, 255, 255, 0.15);
   --badge-outline: rgba(0, 255, 255, 0.08);
