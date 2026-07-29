@@ -11,8 +11,10 @@ const router = Router();
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 function kkpaySign(base64Data: string, secret: string, timestamp?: number, nonce?: string): string {
-  const data = timestamp && nonce ? base64Data + timestamp + nonce + secret : base64Data + secret;
-  return createHash("sha256").update(data).digest("hex").toLowerCase();
+  if (timestamp && nonce) {
+    return createHash("md5").update(base64Data + timestamp + nonce + secret).digest("hex").toLowerCase();
+  }
+  return createHash("md5").update(base64Data + secret).digest("hex").toLowerCase();
 }
 
 function extractKkpayPayUrl(rawText: string): { ok: true; payUrl: string } | { ok: false; error: string } {
