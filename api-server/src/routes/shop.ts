@@ -2,7 +2,7 @@ import { Router, raw as expressRaw } from "express";
 import { db } from "@workspace/db";
 import { cardKeys, users, shopConfig, shopOrders } from "@workspace/db";
 import { eq, isNull, and, desc } from "drizzle-orm";
-import { createHash, randomUUID } from "crypto";
+import { createHash, createHmac, randomUUID } from "crypto";
 import { requireAuth, requireAdmin, requireAdminSecret } from "../middleware/requireAuth";
 import { cardTypeDurationMs, type CardType } from "../lib/auth";
 
@@ -10,10 +10,10 @@ const router = Router();
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-function kkpaySign(base64Data: string, secret: string): string {
-  return Buffer.from(
-    createHash("sha256").update(base64Data + secret).digest()
-  ).toString("base64");
+function kkpaySign(body: string, secret: string, timestamp: number | string, nonce: string, method: string, path: string): string {
+  // 待签字符串 = timestamp\nnonce\nmethod\npath\nbody
+  const stringToSign = `${timestamp}\n${nonce}\n${method}\n${path}\n${body}`;
+  return createHmac("sha256", secret).update(stringToSign).digest("base64");
 }
 
 function extractKkpayPayUrl(rawText: string): { ok: true; payUrl: string } | { ok: false; error: string } {
@@ -279,18 +279,16 @@ router.post("/shop/create-order", requireAuth, async (req, res) => {
     const orderId = randomUUID();
 
     const timestamp = Math.floor(Date.now() / 1000);
-    const nonce = Math.random().toString(36).slice(2, 10);
+    const nonce = randomUUID();
     const payload = JSON.stringify({
       userOrder: orderId,
       name: `${cfg.productName}-${typeLabel[cardType]}`,
       amount: price,
       coin: "USDT",
-      notify_url: `${cfg.domain}/api/shop/notify`,
-      timestamp,
-      nonce,
+      callbackUrl: `${cfg.domain}/api/shop/notify`,
     });
     const base64Data = Buffer.from(payload).toString("base64");
-    const sign = kkpaySign(base64Data, cfg.kkpaySecret);
+    const sign = kkpaySign(base64Data, cfg.kkpaySecret, timestamp, nonce, "POST", "/merchant/payLink");
 
     let rawText = "";
     try {
@@ -525,18 +523,16 @@ router.post("/shop/tg-webhook", async (req, res) => {
       const price = priceMap[cardType]!;
 
       const timestamp2 = Math.floor(Date.now() / 1000);
-      const nonce2 = Math.random().toString(36).slice(2, 10);
+      const nonce2 = randomUUID();
       const payload = JSON.stringify({
         userOrder: orderId,
         name: `${cfg.productName}-${typeLabel[cardType]}`,
         amount: price,
         coin: "USDT",
-        notify_url: `${cfg.domain}/api/shop/notify`,
-        timestamp: timestamp2,
-        nonce: nonce2,
+        callbackUrl: `${cfg.domain}/api/shop/notify`,
       });
       const base64Data = Buffer.from(payload).toString("base64");
-      const sign = kkpaySign(base64Data, cfg.kkpaySecret);
+      const sign = kkpaySign(base64Data, cfg.kkpaySecret, timestamp2, nonce2, "POST", "/merchant/payLink");
 
       let rawText = "";
       try {
