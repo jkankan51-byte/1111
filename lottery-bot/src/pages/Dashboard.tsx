@@ -807,37 +807,34 @@ export default function Dashboard() {
   const [clearLoading, setClearLoading] = useState(false);
   const [sseAlert, setSseAlert] = useState<string | null>(null);
   const [themeColor, setThemeColor] = useState(() => { try { return localStorage.getItem("themeColor") || "cyan"; } catch { return "cyan"; } });
+  // Inject theme stylesheet once on mount
   useEffect(() => {
-    const root = document.documentElement;
-    const themes: Record<string, { primary: string; accent: string; ring: string }> = {
-      cyan:  { primary: "187 100% 50%", accent: "#00f0ff", ring: "187 100% 50%" },
-      pink:  { primary: "330 100% 50%", accent: "#ff0080", ring: "330 100% 50%" },
-      gold:  { primary: "51 100% 50%",  accent: "#ffd700", ring: "51 100% 50%" },
-      green: { primary: "162 100% 50%", accent: "#00ff88", ring: "162 100% 50%" },
-      purple:{ primary: "270 91% 65%",  accent: "#a855f7", ring: "270 91% 65%" },
-    };
-    const t = themes[themeColor] ?? themes.cyan!;
-    root.style.setProperty("--primary", t.primary);
-    root.style.setProperty("--ring", t.ring);
-    root.style.setProperty("--chart-1", t.primary);
-    root.style.setProperty("--sidebar-primary", t.primary);
-    root.style.setProperty("--sidebar-ring", t.ring);
-    // Also inject a <style> tag for Tailwind utility overrides
-    let styleEl = document.getElementById("theme-style") as HTMLStyleElement | null;
-    if (!styleEl) {
-      styleEl = document.createElement("style");
-      styleEl.id = "theme-style";
-      document.head.appendChild(styleEl);
-    }
-    styleEl.textContent = `
-      .text-blue-400, .text-cyan-400, .text-blue-300, .text-cyan-300,
-      .text-sky-400, .text-indigo-400, .hover\\:text-blue-400:hover,
-      .hover\\:text-cyan-400:hover { color: ${t.accent} !important; }
-      .bg-blue-500\\/10, .bg-blue-500\\/20, .bg-cyan-500\\/10,
-      .bg-sky-500\\/10 { background: ${t.accent}1a !important; }
-      .border-blue-500\\/30, .border-cyan-500\\/30,
-      .border-blue-500\\/20 { border-color: ${t.accent}4d !important; }
-    `;
+    if (document.getElementById("theme-style")) return;
+    const style = document.createElement("style");
+    style.id = "theme-style";
+    style.textContent = [
+      'html[data-theme="pink"] .text-blue-400,html[data-theme="pink"] .text-cyan-400,html[data-theme="pink"] .text-blue-300,html[data-theme="pink"] .text-cyan-300{color:#ff0080!important}',
+      'html[data-theme="pink"] .bg-blue-500\\/10,html[data-theme="pink"] .bg-blue-500\\/20{background:rgba(255,0,128,0.1)!important}',
+      'html[data-theme="pink"] .border-blue-500\\/30{border-color:rgba(255,0,128,0.3)!important}',
+      'html[data-theme="gold"] .text-blue-400,html[data-theme="gold"] .text-cyan-400,html[data-theme="gold"] .text-blue-300,html[data-theme="gold"] .text-cyan-300{color:#ffd700!important}',
+      'html[data-theme="gold"] .bg-blue-500\\/10,html[data-theme="gold"] .bg-blue-500\\/20{background:rgba(255,215,0,0.1)!important}',
+      'html[data-theme="gold"] .border-blue-500\\/30{border-color:rgba(255,215,0,0.3)!important}',
+      'html[data-theme="green"] .text-blue-400,html[data-theme="green"] .text-cyan-400,html[data-theme="green"] .text-blue-300,html[data-theme="green"] .text-cyan-300{color:#00ff88!important}',
+      'html[data-theme="green"] .bg-blue-500\\/10,html[data-theme="green"] .bg-blue-500\\/20{background:rgba(0,255,136,0.1)!important}',
+      'html[data-theme="green"] .border-blue-500\\/30{border-color:rgba(0,255,136,0.3)!important}',
+      'html[data-theme="purple"] .text-blue-400,html[data-theme="purple"] .text-cyan-400,html[data-theme="purple"] .text-blue-300,html[data-theme="purple"] .text-cyan-300{color:#a855f7!important}',
+      'html[data-theme="purple"] .bg-blue-500\\/10,html[data-theme="purple"] .bg-blue-500\\/20{background:rgba(168,85,247,0.1)!important}',
+      'html[data-theme="purple"] .border-blue-500\\/30{border-color:rgba(168,85,247,0.3)!important}',
+    ].join("");
+    document.head.appendChild(style);
+  }, []);
+  // Update data-theme and CSS variables on change
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", themeColor);
+    const hslMap: Record<string, string> = { cyan:"187 100% 50%", pink:"330 100% 50%", gold:"51 100% 50%", green:"162 100% 50%", purple:"270 91% 65%" };
+    const h = hslMap[themeColor] ?? "187 100% 50%";
+    document.documentElement.style.setProperty("--primary", h);
+    document.documentElement.style.setProperty("--ring", h);
   }, [themeColor]);
   const [showThemePicker, setShowThemePicker] = useState(false);
   const nextCloseRef = useRef<number>(0);
