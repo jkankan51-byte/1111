@@ -15,7 +15,6 @@ export default function BottomNav() {
 
   const items = [
     { path: "/",         icon: "🏠", label: "主控台", show: true },
-    { path: "/hash2",    icon: "#️⃣", label: "加拿大新版",  show: true },
     { path: "/trend",    icon: "📊", label: "走势",   show: true },
     { path: "/card-key", icon: "🎫", label: "卡密",   show: true },
     { path: "/tutorial", icon: "📖", label: "教程",   show: true },
@@ -26,7 +25,7 @@ export default function BottomNav() {
     <div className="fixed bottom-0 left-0 right-0 z-50 bg-[#0b0e1a]/95 border-t border-[#1e2235] backdrop-blur">
       <div className="max-w-lg mx-auto flex">
         {items.map(item => {
-          const active = location === item.path || (item.path === "/hash2" && location.startsWith("/hash2/"));
+          const active = location === item.path;
           const badge = item.path === "/card-key" ? cardBadge : null;
           return (
             <button

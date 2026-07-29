@@ -20,21 +20,10 @@ interface DrawState {
 const ALGO_LABELS: Record<string, string> = {
   signal_follow:    "通用-跟信号",
   signal_reverse:   "通用-反信号",
-  ks_follow:        "快三-跟上期",
-  ks_reverse:       "快三-反上期",
-  ks_bb:            "快三-AABB",
-  ks_smart:         "快三-均值回归",
   abc_trend:        "加拿大-ABC走势",
   abc_digit_ai:     "加拿大-ABC三位数字AI",
   abc_digit_cycle_ai:"加拿大-ABC轮打AI",
   private_combo_ai: "加拿大-新群综合AI",
-  hash_abc_digit_ai:"哈希-ABC三位数字AI",
-  hash_abc_digit_cycle_ai:"哈希-ABC轮打AI",
-  hash_follow:      "哈希-算法1",
-  hash_reverse:     "哈希-算法2",
-  hash_smart:       "哈希-算法3",
-  hash_kill_plus:   "哈希-算法5 🔥 杀组(升级版)",
-  hash_smart_plus:  "哈希-算法6 🧠 三算法融合",
 };
 
 const REMOVED_CANADA_ALGOS = new Set([
@@ -60,14 +49,12 @@ const VISIBLE_ALGO_LABELS = Object.fromEntries(
 
 const AVAILABLE_ALGOS = new Set(Object.keys(VISIBLE_ALGO_LABELS));
 
-function normalizeAlgos(a: string[], gameMode: "lottery" | "kuaisan" | "hash" = "lottery") {
+function normalizeAlgos(a: string[]) {
   const filtered = a
     .filter(x => !REMOVED_CANADA_ALGOS.has(x))
     .filter(x => AVAILABLE_ALGOS.has(x))
     .filter((x, index, arr) => arr.indexOf(x) === index);
   if (filtered.length > 0) return filtered;
-  if (gameMode === "hash") return ["hash_follow"];
-  if (gameMode === "kuaisan") return ["ks_follow"];
   return ["abc_trend"];
 }
 
@@ -87,14 +74,6 @@ function normalizeChaseNumbers(entries: Array<{ num: string; amount: string }>, 
 
 const BET_OPT_LABELS: Record<string, string> = {
   big: "大", small: "小", odd: "单", even: "双",
-};
-
-const KS_OPT_LABELS: Record<string, string> = {
-  big: "大", small: "小", odd: "单", even: "双",
-  dragon: "龙", tiger: "虎",
-  "big-odd": "大单", "big-even": "大双", "small-odd": "小单", "small-even": "小双",
-  "big-dragon": "大龙", "small-tiger": "小虎",
-  leopard: "豹子",
 };
 
 const STRATEGY_LABELS: Record<string, string> = {
@@ -325,13 +304,10 @@ function SettingsDrawer({ status, onClose, onSave }: {
   const [maxLoss, setMaxLoss] = useState(String(status.maxConsecutiveLosses ?? 5));
   const [cooldown, setCooldown] = useState(String(status.cooldownSeconds ?? 0));
   const [algoFlip, setAlgoFlip] = useState(String((status as unknown as { algoFlipOnLoss?: number }).algoFlipOnLoss ?? 4));
-  const [algos, setAlgos] = useState<string[]>(normalizeAlgos(status.algorithms ?? [], (status.gameMode ?? "lottery") as "lottery" | "kuaisan" | "hash"));
+  const [algos, setAlgos] = useState<string[]>(normalizeAlgos(status.algorithms ?? []));
   const [betOpts, setBetOpts] = useState<string[]>(status.betOptions ?? ["big", "small"]);
   const [dualGroupMode, setDualGroupMode] = useState<boolean>(!!(status as unknown as { dualGroupMode?: boolean }).dualGroupMode);
   const [killGroupMode, setKillGroupMode] = useState<boolean>(!!(status as unknown as { killGroupMode?: boolean }).killGroupMode);
-  const [gameMode, setGameMode] = useState<"lottery" | "kuaisan" | "hash">((status.gameMode ?? "lottery") as "lottery" | "kuaisan" | "hash");
-  const [kuaisanOpts, setKuaisanOpts] = useState<string[]>(status.kuaisanBetOptions ?? ["big", "small"]);
-  const [hashOpts, setHashOpts] = useState<string[]>((status as unknown as {hashBetOptions?: string[]}).hashBetOptions ?? ["big", "small"]);
   const [kkpay, setKkpay] = useState(status.kkpayUsername ?? "kkpay");
   const [levels, setLevels] = useState<string[]>(initLevels.map(String));
   const [stepBackOnWin, setStepBackOnWin] = useState(status.stepBackOnWin ?? true);
@@ -379,7 +355,7 @@ function SettingsDrawer({ status, onClose, onSave }: {
         betAmount: Number(betAmount), strategy, betMultiplier: Number(multiplier),
         stopLoss: Number(stopLoss), targetProfit: Number(targetProfit),
         maxConsecutiveLosses: Number(maxLoss), cooldownSeconds: Number(cooldown),
-        algorithms: normalizeAlgos(algos, gameMode), betOptions: betOpts, dualGroupMode, killGroupMode,
+        algorithms: normalizeAlgos(algos), betOptions: betOpts, dualGroupMode, killGroupMode,
         amountLevels: levels.map(Number),
         stepBackOnWin,
         odds: Number(oddsBigSmall),
@@ -392,9 +368,6 @@ function SettingsDrawer({ status, onClose, onSave }: {
         chaseOnly,
         chaseDoubleOnLoss,
         chaseAmountLevels: chaseLevels.map(Number),
-        gameMode,
-        kuaisanBetOptions: kuaisanOpts,
-        hashBetOptions: hashOpts,
         algoFlipOnLoss: Number(algoFlip),
         abcAEnabled,
         abcBEnabled,
@@ -427,75 +400,6 @@ function SettingsDrawer({ status, onClose, onSave }: {
           <div className={sectionCls}>
             <h4 className="text-xs text-slate-500 font-medium uppercase tracking-wider mb-2">玩法策略</h4>
 
-            {/* Game mode toggle */}
-            <div>
-              <label className={labelCls}>游戏模式</label>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => setGameMode("lottery")}
-                  className={`flex-1 py-2 rounded-lg text-xs font-medium border transition ${gameMode === "lottery" ? "bg-blue-600 border-blue-500 text-white" : "bg-[#0f1220] border-[#252a3d] text-slate-400 hover:border-blue-500/50"}`}
-                >
-                  🍁 加拿大
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setGameMode("kuaisan")}
-                  className={`flex-1 py-2 rounded-lg text-xs font-medium border transition ${gameMode === "kuaisan" ? "bg-emerald-600 border-emerald-500 text-white" : "bg-[#0f1220] border-[#252a3d] text-slate-400 hover:border-emerald-500/50"}`}
-                >
-                  🎲 快三
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setGameMode("hash")}
-                  className={`flex-1 py-2 rounded-lg text-xs font-medium border transition ${gameMode === "hash" ? "bg-purple-600 border-purple-500 text-white" : "bg-[#0f1220] border-[#252a3d] text-slate-400 hover:border-purple-500/50"}`}
-                >
-                  #️⃣ 哈希
-                </button>
-              </div>
-            </div>
-
-            {/* Kuaisan bet options */}
-            {gameMode === "kuaisan" && (
-              <div>
-                <label className={labelCls}>快三下注选项</label>
-                <div className="flex flex-wrap gap-2">
-                  {Object.entries(KS_OPT_LABELS).map(([k, v]) => (
-                    <span
-                      key={k}
-                      className={tagCls(kuaisanOpts.includes(k))}
-                      onClick={() => setKuaisanOpts(prev => prev.includes(k) ? prev.filter(x => x !== k) : [...prev, k])}
-                    >
-                      {v}
-                    </span>
-                  ))}
-                </div>
-                <p className="text-[10px] text-slate-600 mt-1">选中的选项由算法从中选取一个方向下注</p>
-              </div>
-            )}
-
-            {/* Hash bet options */}
-            {gameMode === "hash" && (
-              <div>
-                <label className={labelCls}>哈希28下注选项</label>
-                <div className="flex flex-wrap gap-2">
-                  {Object.entries({ big: "大", small: "小", odd: "单", even: "双", "big-odd": "大单", "big-even": "大双", "small-odd": "小单", "small-even": "小双" }).map(([k, v]) => (
-                    <span
-                      key={k}
-                      className={tagCls(hashOpts.includes(k))}
-                      onClick={() => setHashOpts(prev => prev.includes(k) ? prev.filter(x => x !== k) : [...prev, k])}
-                    >
-                      {v}
-                    </span>
-                  ))}
-                </div>
-                <p className="text-[10px] text-slate-600 mt-1">大≥14，小≤13，算法从选中项中选取方向下注</p>
-              </div>
-            )}
-
-            {/* Lottery-specific bet options (hidden in kuaisan mode) */}
-            {gameMode === "lottery" && (
-              <div>
               <label className={labelCls}>下注选项</label>
               <div className="flex flex-wrap gap-2">
                 {Object.entries(BET_OPT_LABELS).map(([k, v]) => (
@@ -550,9 +454,6 @@ function SettingsDrawer({ status, onClose, onSave }: {
                   </p>
                 )}
               </div>
-
-            </div>
-            )}
             <div>
               <label className={labelCls}>算法选择</label>
               <div className="flex flex-wrap gap-2">
@@ -562,8 +463,7 @@ function SettingsDrawer({ status, onClose, onSave }: {
               </div>
             </div>
 
-            {((gameMode === "lottery" && (algos.includes("abc_digit_ai") || algos.includes("abc_digit_cycle_ai")))
-              || (gameMode === "hash" && (algos.includes("hash_abc_digit_ai") || algos.includes("hash_abc_digit_cycle_ai")))) && (
+            {(algos.includes("abc_digit_ai") || algos.includes("abc_digit_cycle_ai")) && (
               <div className="mt-3 rounded-2xl border border-cyan-500/30 bg-cyan-500/5 p-3 space-y-3">
                 <div>
                   <div className="text-xs font-medium text-cyan-300">ABC 独立模板</div>
@@ -924,17 +824,6 @@ export default function Dashboard() {
   const [toggleLoading, setToggleLoading] = useState(false);
   const [clearLoading, setClearLoading] = useState(false);
   const [sseAlert, setSseAlert] = useState<string | null>(null);
-  const [kuaisanPhase, setKuaisanPhase] = useState<string>("idle");
-  const [kuaisanPeriod, setKuaisanPeriod] = useState<string | null>(null);
-  const [kuaisanResults, setKuaisanResults] = useState<Array<{ label: string; dice: number[]; sum: number; leopard: boolean }>>([]);
-  const [kuaisanDice, setKuaisanDice] = useState<number[]>([]);
-  const [kuaisanChatLog, setKuaisanChatLog] = useState<Array<{ text: string; ts: number; chatId?: string }>>([]);
-  const [showChatLog, setShowChatLog] = useState(false);
-  const [hashPhase, setHashPhase] = useState<string>("idle");
-  const [hashPeriod, setHashPeriod] = useState<string | null>(null);
-  const [hashResults, setHashResults] = useState<Array<{ label: string; value: number; big: boolean; odd: boolean }>>([]);
-  const [debugResult, setDebugResult] = useState<string | null>(null);
-  const [debugLoading, setDebugLoading] = useState(false);
   const nextCloseRef = useRef<number>(0);
   const sseRef = useRef<EventSource | null>(null);
   const statusInFlightRef = useRef<Promise<void> | null>(null);
@@ -989,15 +878,6 @@ export default function Dashboard() {
       try {
         const s = await api.tg.status();
         setStatus(s);
-        if (s.kuaisanPhase) setKuaisanPhase(s.kuaisanPhase);
-        if (s.kuaisanPeriod !== undefined) setKuaisanPeriod(s.kuaisanPeriod ?? null);
-        if (s.kuaisanLastDice) setKuaisanDice(s.kuaisanLastDice);
-        if (s.kuaisanResults?.length) setKuaisanResults(s.kuaisanResults.map(r => ({ label: r.label, dice: Array.from(r.dice), sum: r.sum, leopard: r.leopard })));
-        if (s.kuaisanChatLog?.length) setKuaisanChatLog(s.kuaisanChatLog);
-        if ((s as unknown as Record<string, unknown>).hashPhase) setHashPhase((s as unknown as Record<string, unknown>).hashPhase as string);
-        if ((s as unknown as Record<string, unknown>).hashPeriod !== undefined) setHashPeriod(((s as unknown as Record<string, unknown>).hashPeriod as string | null) ?? null);
-        const hr = (s as unknown as Record<string, unknown>).hashResults as Array<{ label: string; value: number; big: boolean; odd: boolean }> | undefined;
-        if (hr?.length) setHashResults(hr);
         if (!s.connected) { setTgStep("login"); return; }
         if (s.watchGroupId) {
           try { localStorage.setItem(TG_LAST_GROUP_KEY, s.watchGroupId); } catch {}
@@ -1111,40 +991,6 @@ export default function Dashboard() {
           const msg = ev.msg as string;
           setSseAlert(msg);
           // Auto-stop detected on backend; sync status so the toggle reflects the new state
-          void fetchStatus();
-        }
-        if (ev.type === "kuaisan:phase") {
-          setKuaisanPhase(ev.phase as string);
-          if (ev.period !== undefined) setKuaisanPeriod(ev.period as string | null);
-        }
-        if (ev.type === "kuaisan:dice") {
-          setKuaisanDice((ev.buffer as number[]) ?? []);
-        }
-        if (ev.type === "kuaisan:result") {
-          setKuaisanDice([]);
-          setKuaisanPhase("closed");
-          setKuaisanResults(prev => [{
-            label: ev.label as string,
-            dice: ev.dice as number[],
-            sum: ev.sum as number,
-            leopard: ev.leopard as boolean,
-          }, ...prev].slice(0, 30));
-          void fetchBets();
-          void fetchStatus();
-        }
-        if (ev.type === "hash:phase") {
-          setHashPhase(ev.phase as string);
-          if (ev.period !== undefined) setHashPeriod(ev.period as string | null);
-        }
-        if (ev.type === "hash:result") {
-          setHashPhase("closed");
-          setHashResults(prev => [{
-            label: ev.label as string,
-            value: ev.value as number,
-            big: ev.big as boolean,
-            odd: ev.odd as boolean,
-          }, ...prev].slice(0, 30));
-          void fetchBets();
           void fetchStatus();
         }
       } catch { /* ignore */ }
@@ -1312,235 +1158,7 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* ── Hash (哈希) Panel ── */}
-            {status.gameMode === "hash" && (
-              <div className="bg-[#161929] border border-[#252a3d] rounded-2xl p-5 space-y-4">
-                {/* Phase + period */}
-                <div className="flex justify-between items-center">
-                  <div>
-                    <span className="text-slate-400 text-xs">哈希28模式</span>
-                    <div className="text-white font-bold text-lg">
-                      {hashPhase === "betting" ? "🟢 下注中" : hashPhase === "closed" ? "🔴 已封盘" : "⚪ 等待中"}
-                    </div>
-                    {hashPeriod && <div className="text-slate-500 text-[10px] mt-0.5 font-mono">{hashPeriod}</div>}
-                  </div>
-                  {/* Hash value badge — same size/style as kuaisan sum ball */}
-                  <div className="flex gap-1.5 items-center">
-                    {hashResults[0] !== undefined ? (
-                      <div className={`w-9 h-9 rounded-lg border-2 flex flex-col items-center justify-center font-bold transition-all ${
-                        hashResults[0].big ? "border-red-500 bg-red-500/15 text-red-300" : "border-blue-500 bg-blue-500/15 text-blue-300"
-                      }`}>
-                        <span className="text-sm leading-none">{hashResults[0].value}</span>
-                        <span className="text-[8px] leading-none mt-0.5 text-slate-400">{hashResults[0].label}</span>
-                      </div>
-                    ) : (
-                      <div className="w-9 h-9 rounded-lg border-2 border-[#252a3d] bg-[#0f1220] flex items-center justify-center text-slate-600 text-xs">?</div>
-                    )}
-                  </div>
-                </div>
-
-                {/* AutoBet active indicator */}
-                {status.autoBet && hashPhase === "betting" && (
-                  <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl px-4 py-2 text-center">
-                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse mr-2 align-middle" />
-                    <span className="text-emerald-400 text-sm font-semibold">自动下注已激活</span>
-                  </div>
-                )}
-
-                {/* Risk blocked */}
-                {status.riskBlocked && (
-                  <div className="bg-orange-500/10 border border-orange-500/20 rounded-xl px-4 py-2 text-center">
-                    <span className="text-orange-400 text-xs">⚠️ {status.riskReason}</span>
-                  </div>
-                )}
-
-                {/* Recent results */}
-                {hashResults.length > 0 && (
-                  <div>
-                    <div className="text-xs text-slate-500 mb-2">近期结果</div>
-                    <div className="flex flex-wrap gap-1.5">
-                      {hashResults.slice(0, 12).map((r, i) => (
-                        <span key={i} className={`text-[11px] px-2 py-0.5 rounded font-medium border ${
-                          r.big ? "bg-red-500/15 text-red-400 border-red-500/25" : "bg-blue-500/15 text-blue-400 border-blue-500/25"
-                        }`}>
-                          {r.value}
-                          <span className="text-slate-600 ml-1 text-[9px]">{r.label}</span>
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Group message debug log */}
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => setShowChatLog(v => !v)}
-                      className="text-[11px] text-slate-500 hover:text-slate-300 transition flex items-center gap-1"
-                    >
-                      <span>{showChatLog ? "▲" : "▶"}</span>
-                      群消息日志 {kuaisanChatLog.length > 0 ? `(${kuaisanChatLog.length})` : "(无)"}
-                    </button>
-                    <button
-                      disabled={debugLoading}
-                      onClick={async () => {
-                        setDebugLoading(true);
-                        setDebugResult(null);
-                        try {
-                          const r = await api.tg.debugGroup();
-                          if (!r.ok) {
-                            setDebugResult(`❌ 错误: ${r.error}`);
-                          } else if (!r.messages?.length) {
-                            setDebugResult(`⚠️ 群组 ${r.watchGroupId} 无消息`);
-                          } else {
-                            const lines = r.messages.map((m: {ts:number;hasMedia:boolean;text:string}) =>
-                              `[${new Date(m.ts).toLocaleTimeString("zh-CN")}]${m.hasMedia ? "📷" : ""} ${m.text || "(无文字)"}`
-                            ).join("\n");
-                            setDebugResult(`✅ 群ID: ${r.watchGroupId}\n最近消息:\n${lines}`);
-                          }
-                        } catch { setDebugResult("❌ 请求失败"); }
-                        setDebugLoading(false);
-                      }}
-                      className="text-[11px] text-blue-400 hover:text-blue-300 border border-blue-500/30 rounded px-2 py-0.5 transition disabled:opacity-50"
-                    >
-                      {debugLoading ? "拉取中..." : "🔍 测试群连接"}
-                    </button>
-                  </div>
-                  {debugResult && (
-                    <div className="bg-[#0f1220] border border-[#252a3d] rounded-lg p-2 text-[11px] text-slate-300 whitespace-pre-wrap break-all max-h-40 overflow-y-auto">
-                      {debugResult}
-                    </div>
-                  )}
-                  {showChatLog && (
-                    <div className="space-y-1 max-h-48 overflow-y-auto">
-                      {kuaisanChatLog.length === 0 ? (
-                        <div className="text-xs text-slate-600 italic">尚未收到实时消息。先点"测试群连接"看能否读取历史消息。</div>
-                      ) : kuaisanChatLog.map((m, i) => (
-                        <div key={i} className="bg-[#0f1220] border border-[#252a3d] rounded-lg px-2 py-1.5">
-                          <div className="text-[10px] text-slate-500 mb-0.5">{new Date(m.ts).toLocaleTimeString("zh-CN")}</div>
-                          <div className="text-xs text-slate-300 break-all whitespace-pre-wrap">{m.text}</div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* ── Kuaisan (快三) Panel ── */}
-            {status.gameMode === "kuaisan" && (
-              <div className="bg-[#161929] border border-[#252a3d] rounded-2xl p-5 space-y-4">
-                {/* Phase + period */}
-                <div className="flex justify-between items-center">
-                  <div>
-                    <span className="text-slate-400 text-xs">快三模式</span>
-                    <div className="text-white font-bold text-lg">
-                      {kuaisanPhase === "betting" ? "🟢 下注中" : kuaisanPhase === "closed" ? "🔴 已封盘" : "⚪ 等待中"}
-                    </div>
-                    {kuaisanPeriod && <div className="text-slate-500 text-[10px] mt-0.5 font-mono">{kuaisanPeriod}</div>}
-                  </div>
-                  {/* Dice buffer visualizer */}
-                  <div className="flex gap-1.5 items-center">
-                    {[0, 1, 2].map(i => (
-                      <div key={i} className={`w-9 h-9 rounded-lg border-2 flex items-center justify-center text-xl font-bold transition-all ${kuaisanDice[i] ? "border-emerald-500 bg-emerald-500/15 text-white" : "border-[#252a3d] bg-[#0f1220] text-slate-600"}`}>
-                        {kuaisanDice[i] ? ["", "⚀", "⚁", "⚂", "⚃", "⚄", "⚅"][kuaisanDice[i]] : "?"}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* AutoBet active indicator */}
-                {status.autoBet && kuaisanPhase === "betting" && (
-                  <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl px-4 py-2 text-center">
-                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse mr-2 align-middle" />
-                    <span className="text-emerald-400 text-sm font-semibold">自动下注已激活</span>
-                  </div>
-                )}
-
-                {/* Risk blocked */}
-                {status.riskBlocked && (
-                  <div className="bg-orange-500/10 border border-orange-500/20 rounded-xl px-4 py-2 text-center">
-                    <span className="text-orange-400 text-xs">⚠️ {status.riskReason}</span>
-                  </div>
-                )}
-
-                {/* Recent results */}
-                {kuaisanResults.length > 0 && (
-                  <div>
-                    <div className="text-xs text-slate-500 mb-2">近期结果</div>
-                    <div className="flex flex-wrap gap-1.5">
-                      {kuaisanResults.slice(0, 12).map((r, i) => (
-                        <span key={i} className={`text-[11px] px-2 py-0.5 rounded font-medium border ${
-                          r.leopard ? "bg-amber-500/20 text-amber-400 border-amber-500/40" :
-                          r.label?.startsWith("大") ? "bg-red-500/15 text-red-400 border-red-500/25" :
-                          "bg-blue-500/15 text-blue-400 border-blue-500/25"
-                        }`}>
-                          {r.label}
-                          <span className="text-slate-600 ml-1 text-[9px]">{r.dice.join("-")}</span>
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Group message debug log */}
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => setShowChatLog(v => !v)}
-                      className="text-[11px] text-slate-500 hover:text-slate-300 transition flex items-center gap-1"
-                    >
-                      <span>{showChatLog ? "▲" : "▶"}</span>
-                      群消息日志 {kuaisanChatLog.length > 0 ? `(${kuaisanChatLog.length})` : "(无)"}
-                    </button>
-                    <button
-                      disabled={debugLoading}
-                      onClick={async () => {
-                        setDebugLoading(true);
-                        setDebugResult(null);
-                        try {
-                          const r = await api.tg.debugGroup();
-                          if (!r.ok) {
-                            setDebugResult(`❌ 错误: ${r.error}`);
-                          } else if (!r.messages?.length) {
-                            setDebugResult(`⚠️ 群组 ${r.watchGroupId} 无消息`);
-                          } else {
-                            const lines = r.messages.map(m =>
-                              `[${new Date(m.ts).toLocaleTimeString("zh-CN")}]${m.hasMedia ? "📷" : ""} ${m.text || "(无文字)"}`
-                            ).join("\n");
-                            setDebugResult(`✅ 群ID: ${r.watchGroupId}\n最近消息:\n${lines}`);
-                          }
-                        } catch { setDebugResult("❌ 请求失败"); }
-                        setDebugLoading(false);
-                      }}
-                      className="text-[11px] text-blue-400 hover:text-blue-300 border border-blue-500/30 rounded px-2 py-0.5 transition disabled:opacity-50"
-                    >
-                      {debugLoading ? "拉取中..." : "🔍 测试群连接"}
-                    </button>
-                  </div>
-                  {debugResult && (
-                    <div className="bg-[#0f1220] border border-[#252a3d] rounded-lg p-2 text-[11px] text-slate-300 whitespace-pre-wrap break-all max-h-40 overflow-y-auto">
-                      {debugResult}
-                    </div>
-                  )}
-                  {showChatLog && (
-                    <div className="space-y-1 max-h-48 overflow-y-auto">
-                      {kuaisanChatLog.length === 0 ? (
-                        <div className="text-xs text-slate-600 italic">尚未收到实时消息。先点"测试群连接"看能否读取历史消息。</div>
-                      ) : kuaisanChatLog.map((m, i) => (
-                        <div key={i} className="bg-[#0f1220] border border-[#252a3d] rounded-lg px-2 py-1.5">
-                          <div className="text-[10px] text-slate-500 mb-0.5">{new Date(m.ts).toLocaleTimeString("zh-CN")}</div>
-                          <div className="text-xs text-slate-300 break-all whitespace-pre-wrap">{m.text}</div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* Period & Countdown (lottery mode only — hidden in kuaisan / hash) */}
-            {status.gameMode === "lottery" && (
+            {/* Period & Countdown */}
             <div className="bg-[#161929] border border-[#252a3d] rounded-2xl p-5">
               <div className="flex justify-between items-center mb-3">
                 <div>
@@ -1582,7 +1200,6 @@ export default function Dashboard() {
                 </div>
               )}
             </div>
-            )}
 
             {/* Stats */}
             <div className="grid grid-cols-4 gap-2">
@@ -1608,22 +1225,18 @@ export default function Dashboard() {
                       const adaptiveLabel = algos.includes("adaptive_switch")
                         ? (status.adaptiveSwitchKillMode ? " 🎯杀组" : " 大小")
                         : "";
-                      // 相位提示：哈希模式看 hashPhase，其余看 kuaisanPhase
-                      const isHashMode = algos.some(a => a.startsWith("hash_"));
-                      const phase = isHashMode ? hashPhase : kuaisanPhase;
-                      const phaseLabel = phase === "betting" ? "⏱ 等待中" : phase === "closed" ? "🎯 投注中" : "⏳ 等待中";
                       if (algos.length <= 1) {
                         // 只有一个算法：直接显示名称
                         const label = ALGO_LABELS[currentAlgoId] ?? "未知算法";
-                        return `运行中 · ${phaseLabel} · ${patternLabel ? patternLabel + " · " : ""}${label}${adaptiveLabel}`;
+                        return `运行中 · ${patternLabel ? patternLabel + " · " : ""}${label}${adaptiveLabel}`;
                       }
                       // 多算法：显示所有，当前高亮（括号标注）
                       const nextIdx = algIdx % algos.length;
                       const algoLine = algos.map((k, i) => {
-                        const short = (ALGO_LABELS[k] ?? k).replace(/^(哈希|快三|通用)-/, "");
+                        const short = (ALGO_LABELS[k] ?? k).replace(/^(通用)-/, "");
                         return i === nextIdx ? `[${short}]` : short;
                       }).join(" / ");
-                      return `运行中 · ${phaseLabel} · ${patternLabel ? patternLabel + " · " : ""}${algoLine}${adaptiveLabel}`;
+                      return `运行中 · ${patternLabel ? patternLabel + " · " : ""}${algoLine}${adaptiveLabel}`;
                     })() : "已停止"}
                   </div>
                 </div>

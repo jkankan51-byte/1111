@@ -168,8 +168,6 @@ const steps: Step[] = [
               { name: "反信号", desc: "与信号方向相反下注" },
               { name: "连出跟随", desc: "连续出现相同结果时跟注" },
               { name: "AI趋势", desc: "AI分析历史规律自动决策" },
-              { name: "快三-跟上期", desc: "押上一局相同方向（快三专用）" },
-              { name: "快三-AABB", desc: "两期相同则顺，不同则反（快三）" },
             ].map(a => (
               <div key={a.name} className="flex gap-2 border-b border-[#252a3d] pb-1.5 last:border-0 last:pb-0">
                 <span className="text-blue-400 text-xs font-medium w-24 flex-shrink-0">{a.name}</span>

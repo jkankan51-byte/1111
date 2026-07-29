@@ -209,9 +209,6 @@ type BetStrategy = "normal" | "martingale" | "anti-martingale";
 type BetOption = "big" | "small" | "odd" | "even" | "big-odd" | "big-even" | "small-odd" | "small-even";
 type AlgorithmId = "signal_follow" | "signal_reverse" | "streak_follow" | "cold_pick" | "random"
   | "dragon_ride" | "dragon_break" | "momentum" | "anti_streak" | "adaptive_switch"
-  | "ks_follow" | "ks_reverse" | "ks_bb" | "ks_smart"
-  | "hash_follow" | "hash_reverse" | "hash_smart" | "hash_smart_plus" | "hash_kill" | "hash_kill_plus"
-  | "hash_abc_digit_ai" | "hash_abc_digit_cycle_ai"
   | "private_combo_ai"
   | "canada_clone_1"
   | "canada_pro_1" | "canada_pro_2" | "canada_pro_3" | "canada_pro_4" | "canada_pro_5"
@@ -243,9 +240,6 @@ interface BetCfg {
   chaseAmountLevels: number[];           // 追号倍投24层金额（全号码共用层次表）
   dualGroupMode: boolean;
   killGroupMode: boolean;
-  gameMode: "lottery" | "kuaisan" | "hash";
-  kuaisanBetOptions: string[];
-  hashBetOptions: string[];
   algoFlipOnLoss: number; // 0=disabled; N=连续方向错N局后自动反转方向
   abcAEnabled: boolean;
   abcBEnabled: boolean;
@@ -267,38 +261,24 @@ const ACTIVE_ALGORITHMS = new Set<AlgorithmId>([
   "momentum",
   "anti_streak",
   "adaptive_switch",
-  "ks_follow",
-  "ks_reverse",
-  "ks_bb",
-  "ks_smart",
-  "hash_follow",
-  "hash_reverse",
-  "hash_smart",
-  "hash_smart_plus",
-  "hash_kill",
-  "hash_kill_plus",
-  "hash_abc_digit_ai",
-  "hash_abc_digit_cycle_ai",
   "private_combo_ai",
   "abc_trend",
   "abc_digit_ai",
   "abc_digit_cycle_ai",
 ]);
 
-function sanitizeAlgorithms(algos: AlgorithmId[] | undefined, gameMode: BetCfg["gameMode"]): AlgorithmId[] {
+function sanitizeAlgorithms(algos: AlgorithmId[] | undefined): AlgorithmId[] {
   const filtered = (algos ?? [])
     .filter(algo => ACTIVE_ALGORITHMS.has(algo))
     .filter((algo, index, arr) => arr.indexOf(algo) === index);
   if (filtered.length > 0) return filtered;
-  if (gameMode === "hash") return ["hash_follow"];
-  if (gameMode === "kuaisan") return ["ks_follow"];
   return ["abc_trend"];
 }
 
 function sanitizeCfg(cfg: BetCfg): BetCfg {
   return {
     ...cfg,
-    algorithms: sanitizeAlgorithms(cfg.algorithms, cfg.gameMode),
+    algorithms: sanitizeAlgorithms(cfg.algorithms),
   };
 }
 
@@ -428,25 +408,6 @@ export interface TgSession {
   algoStats: Record<string, { wins: number; losses: number; pnl: number }>;
   // 追号倍投层数：key = 号码字符串，value = 当前层索引（0-based）
   chaseLevels: Record<string, number>;
-  // kuaisan state
-  diceBuffer: { value: number; time: number }[];
-  kuaisanPhase: "idle" | "betting" | "closed";
-  kuaisanPeriod: string | null;
-  kuaisanResults: KuaisanResult[];
-  kuaisanHandler: ((event: NewMessageEvent) => Promise<void>) | null;
-  kuaisanHandlerBuilder: NewMessage | null;
-  kuaisanPollTimer?: ReturnType<typeof setInterval>;
-  kuaisanLastMsgId: number;
-  // hash state
-  hashPhase: "idle" | "betting" | "closed";
-  hashPeriod: string | null;
-  hashResults: HashResult[];
-  hashPollTimer?: ReturnType<typeof setInterval>;
-  hashLastMsgId: number;
-  // hash result channel poller (t.me/hx28kjw)
-  hashResultPollTimer?: ReturnType<typeof setInterval>;
-  hashResultLastMsgId: number;
-  hashBetDelayTimer?: ReturnType<typeof setTimeout>;
   // 加拿大独立监控（admin 面板，支持多群）
   canadaMonitorGroupIds: string[];
   canadaMonitorPollers: Record<string, boolean>;   // groupId → active flag
@@ -477,8 +438,6 @@ interface PersistedData {
   canadaMonitorGroupIds?: string[];
   privateMonitorGroupIds?: string[];
   cfg?: Partial<BetCfg>;
-  kuaisanResults?: KuaisanResult[];
-  hashResults?: HashResult[];
   me?: { firstName?: string; lastName?: string; username?: string; phone?: string };
 }
 
@@ -514,9 +473,6 @@ const DEFAULT_CFG: BetCfg = {
   chaseAmountLevels: [100, 200, 300, 500, 800, 1200, 1800, 2700, 4000, 6000, 9000, 13000, 19000, 28000, 40000, 58000, 84000, 120000, 175000, 250000, 360000, 520000, 750000, 1000000],
   dualGroupMode: false,
   killGroupMode: false,
-  gameMode: "lottery",
-  kuaisanBetOptions: ["big", "small"],
-  hashBetOptions: ["big", "small"],
   abcAEnabled: true,
   abcBEnabled: true,
   abcCEnabled: true,
@@ -531,50 +487,11 @@ const BET_OPTION_LABELS: Record<BetOption, string> = {
   "big-odd": "大单", "big-even": "大双", "small-odd": "小单", "small-even": "小双",
 };
 
-// ─── Kuaisan (快三) types & constants ─────────────────────────────────────────
-
-interface KuaisanResult {
-  dice: [number, number, number];
-  sum: number;
-  big: boolean;
-  odd: boolean;
-  leopard: boolean;
-  dragon: boolean;
-  tiger: boolean;
-  label: string; // e.g. "大单龙", "小双虎", "豹子"
-}
-
-const KS_BET_LABELS: Record<string, string> = {
-  big: "大", small: "小", odd: "单", even: "双",
-  dragon: "龙", tiger: "虎", tie: "和", he: "合",
-  "big-odd": "大单", "big-even": "大双", "small-odd": "小单", "small-even": "小双",
-  "big-dragon": "大龙", "small-tiger": "小虎",
-  leopard: "豹子",
-};
-
-// ─── Hash (哈希) types & constants ────────────────────────────────────────────
-
-interface HashResult {
-  value: number; // 0-27
-  big: boolean;  // >= 14
-  odd: boolean;  // value % 2 === 1
-  label: string; // e.g. "大单", "小双"
-  digits?: [number, number, number];
-}
-
-const HASH_BET_LABELS: Record<string, string> = {
-  big: "大", small: "小", odd: "单", even: "双",
-  "big-odd": "大单", "big-even": "大双",
-  "small-odd": "小单", "small-even": "小双",
-};
-
 // ─── Module state ─────────────────────────────────────────────────────────────
 
 export const tgSessions = new Map<number, TgSession>();
 let lotteryHistoryCache: string[] = [];
 let lotteryDigitHistoryCache: Array<[number, number, number]> = [];
-// 哈希28 全局开奖历史（所有用户共享，最新优先，最多保留 100 期）
-let hashHistoryCache: HashResult[] = [];
 
 function clampAbcPickCount(value: unknown, fallback = 4): number {
   const num = Math.floor(Number(value));
@@ -596,16 +513,6 @@ function extractDrawDigits(item: { sum1?: number; sum2?: number; sum3?: number }
   const digits = [item.sum1, item.sum2, item.sum3].map(v => Number(v));
   if (digits.some(v => !Number.isInteger(v) || v < 0 || v > 9)) return null;
   return digits as [number, number, number];
-}
-
-function extractHashDigitsFromText(text: string): [number, number, number] | null {
-  const match = text.match(/([0-9])\+([0-9])\+([0-9])=(\d{1,2})/);
-  if (!match) return null;
-  const digits = [Number(match[1]), Number(match[2]), Number(match[3])] as [number, number, number];
-  if (digits.some(v => !Number.isInteger(v) || v < 0 || v > 9)) return null;
-  const sum = digits[0] + digits[1] + digits[2];
-  if (sum !== Number(match[4])) return null;
-  return digits;
 }
 
 // ─── 独立走势缓存预热（不依赖 TG 会话，服务启动即运行）────────────────────────
@@ -951,8 +858,6 @@ function saveSession(session: TgSession): void {
       balanceSource: session.balanceSource,
       watchGroupId: session.watchGroupId,
       cfg: session.cfg,
-      kuaisanResults: session.kuaisanResults.slice(0, 30),
-      hashResults: (session.hashResults ?? []).slice(0, 30),
       me: session.me ? {
         firstName: session.me.firstName,
         lastName: session.me.lastName,
@@ -1131,8 +1036,6 @@ function destroySession(session: TgSession, reason: string): void {
       balanceSource: session.balanceSource,
       watchGroupId: session.watchGroupId,
       cfg: session.cfg,
-      kuaisanResults: [],
-      hashResults: [],
     };
     if (session.canadaMonitorGroupIds.length > 0)
       (stub as unknown as Record<string, unknown>).canadaMonitorGroupIds = session.canadaMonitorGroupIds;
@@ -1256,9 +1159,6 @@ async function restoreUserSession(userId: number, file: string): Promise<void> {
     chaseLevels: {},
     recentResults: [],
     chatLog: [],
-    diceBuffer: [], kuaisanPhase: "idle", kuaisanPeriod: null, kuaisanResults: data.kuaisanResults ?? [],
-    kuaisanHandler: null, kuaisanHandlerBuilder: null, kuaisanLastMsgId: 0,
-    hashPhase: "idle", hashPeriod: null, hashResults: data.hashResults ?? [], hashLastMsgId: 0, hashResultLastMsgId: 0,
     canadaMonitorGroupIds: data.canadaMonitorGroupIds ?? [], canadaMonitorPollers: {}, canadaSharedPoller: undefined, canadaMonitorLastMsgIds: {}, canadaMonitorInFlight: {}, canadaPollCursor: 0,
     privateMonitorGroupIds: (data as unknown as { privateMonitorGroupIds?: string[] }).privateMonitorGroupIds ?? [], privateMonitorPollers: {}, privateSharedPoller: undefined, privateMonitorLastMsgIds: {}, privateMonitorInFlight: {}, privatePollCursor: 0,
     privateCountdown30Term: null, privateAlgoLastBetTerm: null,
@@ -3349,54 +3249,6 @@ function buildAbcDigitPlan(session: TgSession): AbcDigitPlan | null {
   return plan;
 }
 
-function buildHashDigitPositionHistory(session: TgSession, positionIndex: 0 | 1 | 2): number[] {
-  const source = hashHistoryCache.length > 0 ? hashHistoryCache : (session.hashResults ?? []);
-  return [...source]
-    .reverse()
-    .map(item => item.digits?.[positionIndex])
-    .filter((value): value is number => Number.isInteger(value));
-}
-
-function pickHashAbcDigits(history: number[], count: number): number[] {
-  if (!history.length) return [];
-  const normalizedCount = clampAbcPickCount(count);
-  const latest = history[history.length - 1]!;
-  const others = Array.from({ length: 10 }, (_, digit) => digit).filter(digit => digit !== latest);
-
-  for (let i = others.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    const temp = others[i]!;
-    others[i] = others[j]!;
-    others[j] = temp;
-  }
-
-  return [latest, ...others.slice(0, Math.max(0, normalizedCount - 1))]
-    .sort((a, b) => a - b);
-}
-
-function buildHashAbcDigitPlan(session: TgSession): AbcDigitPlan | null {
-  const historyA = buildHashDigitPositionHistory(session, 0);
-  const historyB = buildHashDigitPositionHistory(session, 1);
-  const historyC = buildHashDigitPositionHistory(session, 2);
-  const plan: AbcDigitPlan = { A: [], B: [], C: [] };
-
-  if (session.cfg.abcAEnabled) {
-    if (!historyA.length) return null;
-    plan.A = pickHashAbcDigits(historyA, session.cfg.abcACount);
-  }
-  if (session.cfg.abcBEnabled) {
-    if (!historyB.length) return null;
-    plan.B = pickHashAbcDigits(historyB, session.cfg.abcBCount);
-  }
-  if (session.cfg.abcCEnabled) {
-    if (!historyC.length) return null;
-    plan.C = pickHashAbcDigits(historyC, session.cfg.abcCCount);
-  }
-
-  if (!plan.A.length && !plan.B.length && !plan.C.length) return null;
-  return plan;
-}
-
 function getAbcDigitExcludedDigits(pickedDigits: number[]): number[] {
   const picked = new Set(pickedDigits);
   return Array.from({ length: 10 }, (_, digit) => digit).filter(digit => !picked.has(digit));
@@ -3477,35 +3329,6 @@ function buildAbcDigitCyclePlan(session: TgSession): AbcDigitPlan | null {
   return plan;
 }
 
-function buildHashAbcDigitSinglePositionPlan(session: TgSession, position: AbcDigitPosition): AbcDigitPlan | null {
-  const plan: AbcDigitPlan = { A: [], B: [], C: [] };
-  const positionIndex = position === "A" ? 0 : position === "B" ? 1 : 2;
-  const history = buildHashDigitPositionHistory(session, positionIndex);
-  if (!history.length) return null;
-
-  if (position === "A") plan.A = pickHashAbcDigits(history, session.cfg.abcACount);
-  if (position === "B") plan.B = pickHashAbcDigits(history, session.cfg.abcBCount);
-  if (position === "C") plan.C = pickHashAbcDigits(history, session.cfg.abcCCount);
-
-  const currentDigits = plan[position];
-  session.abcDigitCycleLastKilled[position] = getAbcDigitExcludedDigits(currentDigits);
-
-  return plan[position].length ? plan : null;
-}
-
-function buildHashAbcDigitCyclePlan(session: TgSession): AbcDigitPlan | null {
-  const enabledPositions = getEnabledAbcDigitPositions(session);
-  if (!enabledPositions.length) return null;
-
-  const nextIndex = session.abcDigitCycleIndex % enabledPositions.length;
-  const position = enabledPositions[nextIndex]!;
-  const plan = buildHashAbcDigitSinglePositionPlan(session, position);
-  if (!plan) return null;
-
-  session.abcDigitCycleIndex = (nextIndex + 1) % enabledPositions.length;
-  return plan;
-}
-
 function hasAbcDigitEnabled(session: TgSession): boolean {
   return !!(session.cfg.abcAEnabled || session.cfg.abcBEnabled || session.cfg.abcCEnabled);
 }
@@ -3532,337 +3355,9 @@ function parseBetLabel(text: string): string | null {
   return null;
 }
 
-// ─── 快三专用算法 ──────────────────────────────────────────────────────────────
-
-/** 从 session.kuaisanResults（只含快三数据）构造算法用历史，oldest→newest */
-function buildKsHistory(session: TgSession, labels: string[]): string[] {
-  return (session.kuaisanResults ?? [])
-    .slice().reverse() // kuaisanResults is newest-first; reverse to oldest-first
-    .map(r => mapR3ToEnabled(r.label, labels))
-    .filter((x): x is string => x !== null);
-}
-
-/** 跟上期：直接跟上一局快三结果的方向 */
-function ksFollow(session: TgSession, labels: string[]): string | null {
-  const h = buildKsHistory(session, labels);
-  if (!h.length) return labels[Math.floor(Math.random() * labels.length)] ?? null;
-  return h[h.length - 1] ?? null;
-}
-
-/** 反上期：押上一局的反方向 */
-function ksReverse(session: TgSession, labels: string[]): string | null {
-  const h = buildKsHistory(session, labels);
-  if (!h.length) return labels[Math.floor(Math.random() * labels.length)] ?? null;
-  const last = h[h.length - 1]!;
-  return labels.find(l => l !== last) ?? last;
-}
-
-/**
- * AABB 形态识别：
- * - 连续两期相同 (AA) → 跟上期（顺势）
- * - 两期不同 (AB)     → 押反（震荡反转）
- */
-function ksBB(session: TgSession, labels: string[]): string | null {
-  const h = buildKsHistory(session, labels);
-  if (h.length < 2) return labels[Math.floor(Math.random() * labels.length)] ?? null;
-  const last = h[h.length - 1]!;
-  const prev = h[h.length - 2]!;
-  if (last === prev) return last;                       // AA → 顺
-  return labels.find(l => l !== last) ?? last;          // AB → 反
-}
-
-/**
- * 智能均值回归：
- * - 近5期某方向 ≥4次 → 押另一方向（强回归信号）
- * - 其余情况跟近3期多数
- */
-function ksSmart(session: TgSession, labels: string[]): string | null {
-  if (labels.length < 2) return labels[0] ?? null;
-  const [optA, optB] = [labels[0]!, labels[1]!];
-  const h = buildKsHistory(session, labels);
-  if (h.length < 3) return labels[Math.floor(Math.random() * labels.length)] ?? null;
-  const r5 = h.slice(-5);
-  const cntA = r5.filter(x => x === optA).length;
-  const cntB = r5.length - cntA;
-  if (cntA >= 4) return optB;
-  if (cntB >= 4) return optA;
-  // 近3期多数投票
-  const r3 = h.slice(-3);
-  const vA = r3.filter(x => x === optA).length;
-  const vB = r3.length - vA;
-  return vA >= vB ? optA : optB;
-}
-
-// ─── Hash (哈希) 专属算法 ─────────────────────────────────────────────────────
-
-/**
- * 将哈希历史结果映射到 labels 维度。
- * 优先用全局 hashHistoryCache，不够时补 session.recentResults。
- * 全局缓存由 publishHashResult 实时更新，所有用户共享。
- */
-function buildHashHistory(session: TgSession, labels: string[]): string[] {
-  const [optA, optB] = [labels[0]!, labels[1] ?? labels[0]!];
-  const raw: string[] = [];
-
-  // 优先使用全局共享历史（所有用户一致）
-  const hr = hashHistoryCache.length > 0 ? hashHistoryCache : (session.hashResults ?? []);
-  for (let i = hr.length - 1; i >= 0; i--) {
-    const r = hr[i]!;
-    if (labels.includes(r.label)) { raw.push(r.label); continue; }
-    // 映射大小单双
-    if (labels.includes("大") || labels.includes("小")) {
-      raw.push(r.big ? "大" : "小"); continue;
-    }
-    if (labels.includes("单") || labels.includes("双")) {
-      raw.push(r.odd ? "单" : "双"); continue;
-    }
-    if (labels.includes("大单") || labels.includes("小双") || labels.includes("大双") || labels.includes("小单")) {
-      const combo = `${r.big ? "大" : "小"}${r.odd ? "单" : "双"}`;
-      const mapped = labels.includes(combo) ? combo : null;
-      if (mapped) raw.push(mapped); else raw.push(optA);
-      continue;
-    }
-    raw.push(optA);
-  }
-
-  // 不够则补 recentResults
-  if (raw.length < 20) {
-    for (let i = session.recentResults.length - 1; i >= 0 && raw.length < 40; i--) {
-      const lbl = session.recentResults[i]!;
-      if (labels.includes(lbl)) { raw.push(lbl); continue; }
-      const isBig = lbl.startsWith("大");
-      const isSmall = lbl.startsWith("小");
-      const isOdd = lbl.includes("单");
-      if (labels.length === 2) {
-        if (labels[0] === "大" || labels[0] === "小") raw.push(isBig ? "大" : "小");
-        else if (labels[0] === "单" || labels[0] === "双") raw.push(isOdd ? "单" : "双");
-        else raw.push(optA);
-      } else {
-        const combo = `${isBig ? "大" : isSmall ? "小" : "大"}${isOdd ? "单" : "双"}`;
-        raw.push(labels.includes(combo) ? combo : optA);
-      }
-    }
-  }
-
-  // raw 是倒序（最新在最前），需要正序
-  return raw.reverse();
-}
-
-/**
- * 哈希算法1 — 区块链龙形
- *
- * 原理：ETH/TRON 区块哈希是强随机源，连续同向超过5期后统计回归概率显著上升。
- * 策略：
- *   - 连续同向 1-5 期 → 跟随（顺势）
- *   - 连续同向 6+ 期  → 反向（统计回归）
- *   - 若近3期出现2次以上交替（ABAB）→ 跟最新一期（波段跟尾）
- */
-function hashDragon(session: TgSession, labels: string[]): string | null {
-  if (labels.length < 2) return labels[0] ?? null;
-  const [optA, optB] = [labels[0]!, labels[1]!];
-  const h = buildHashHistory(session, labels);
-  if (h.length < 2) return labels[Math.floor(Math.random() * labels.length)] ?? null;
-
-  const last = h[h.length - 1]!;
-  const opp = last === optA ? optB : optA;
-
-  // 计算当前连续龙长度
-  let streak = 1;
-  for (let i = h.length - 2; i >= 0; i--) {
-    if (h[i] === last) streak++;
-    else break;
-  }
-
-  // 近4期交替密度
-  const tail4 = h.slice(-4);
-  let altCnt = 0;
-  for (let i = 1; i < tail4.length; i++) if (tail4[i] !== tail4[i - 1]) altCnt++;
-  const isOscillating = tail4.length >= 3 && altCnt >= 3; // 4期3次交替 = ABAB型
-
-  if (isOscillating) return last; // 震荡尾部跟最新一期（波段惯性）
-  if (streak >= 6) return opp;    // 超长龙反转
-  return last;                    // 1-5期顺龙
-}
-
-/**
- * 哈希算法2 — 双链均衡
- *
- * 原理：ETH+TRON 双链独立，理论上大小/单双长期各占50%。
- * 策略：三窗口加权评分（3/6/12期），偏差超过阈值时押均值回归方向；
- *        结果集中在边界附近（12-15）时，反映两链哈希接近边界值，押突破方向。
- */
-function hashBalance(session: TgSession, labels: string[]): string | null {
-  if (labels.length < 2) return labels[0] ?? null;
-  const [optA, optB] = [labels[0]!, labels[1]!];
-  const h = buildHashHistory(session, labels);
-  if (h.length < 3) return labels[Math.floor(Math.random() * labels.length)] ?? null;
-
-  // 三窗口加权：短期权重最高（近期更有参考价值）
-  type Window = { size: number; weight: number; revThresh: number };
-  const windows: Window[] = [
-    { size: 3,  weight: 3, revThresh: 3 },  // 3期全同方向 → 强回归
-    { size: 6,  weight: 2, revThresh: 5 },  // 6期5+同方向 → 回归
-    { size: 12, weight: 1, revThresh: 9 },  // 12期9+同方向 → 回归
-  ];
-
-  let scoreA = 0; // 正分 = 支持押 optA
-  let scoreB = 0;
-
-  for (const w of windows) {
-    const slice = h.slice(-w.size);
-    if (slice.length < Math.ceil(w.size * 0.5)) continue;
-    const cntA = slice.filter(x => x === optA).length;
-    const cntB = slice.length - cntA;
-
-    if (cntA >= w.revThresh) {
-      // optA 占比过高 → 回归信号支持 optB
-      scoreB += w.weight * (cntA - Math.floor(w.size / 2));
-    } else if (cntB >= w.revThresh) {
-      // optB 占比过高 → 回归信号支持 optA
-      scoreA += w.weight * (cntB - Math.floor(w.size / 2));
-    } else {
-      // 均衡区间：跟随近期多数
-      if (cntA > cntB) scoreA += w.weight;
-      else scoreB += w.weight;
-    }
-  }
-
-  // 边界聚集检测：近5期哈希值在12-15之间的数量
-  // 边界聚集意味着下期结果方向不稳定，跟随最近一期
-  const hr = (hashHistoryCache.length > 0 ? hashHistoryCache : (session.hashResults ?? [])).slice(0, 5);
-  const boundaryCount = hr.filter(r => r.value >= 12 && r.value <= 15).length;
-  if (boundaryCount >= 3 && h.length > 0) {
-    // 边界聚集：跟最近一期
-    const lastLbl = h[h.length - 1]!;
-    return labels.includes(lastLbl) ? lastLbl : (scoreA >= scoreB ? optA : optB);
-  }
-
-  if (scoreA === scoreB) return h[h.length - 1] ?? optA; // 平局跟最近
-  return scoreA > scoreB ? optA : optB;
-}
-
-/**
- * 哈希算法3 — MD5波段
- *
- * 原理：MD5 提取数字后取末3位求和，产生特定的"波段"结构——
- *        短期动量 × 中期偏差修正 × 交替密度三维合力决策。
- * 策略：
- *   M1 短期动量（近3期）：一致则跟，不一致取最新
- *   M2 中期偏差（近8期）：超过5.5:2.5偏差则押少数
- *   M3 交替密度（近6期）：交替率≥0.7押反最新（震荡市），≤0.3押跟（龙市）
- *   三维评分加权，取胜出方向
- */
-function hashWave(session: TgSession, labels: string[]): string | null {
-  if (labels.length < 2) return labels[0] ?? null;
-  const [optA, optB] = [labels[0]!, labels[1]!];
-  const h = buildHashHistory(session, labels);
-  if (h.length < 3) return labels[Math.floor(Math.random() * labels.length)] ?? null;
-
-  let scoreA = 0;
-  let scoreB = 0;
-
-  // ── M1 短期动量（近3期，权重3） ──────────────────────────────────
-  const t3 = h.slice(-3);
-  const m1A = t3.filter(x => x === optA).length;
-  const m1B = t3.length - m1A;
-  if (m1A === 3) scoreA += 3;       // 3连同方向 → 强动量
-  else if (m1B === 3) scoreB += 3;
-  else if (m1A > m1B) scoreA += 1;  // 2-1 多数方向
-  else if (m1B > m1A) scoreB += 1;
-  else {
-    // 1-1-? 平局时跟最新
-    const lnew = h[h.length - 1];
-    if (lnew === optA) scoreA += 1; else scoreB += 1;
-  }
-
-  // ── M2 中期偏差（近8期，权重2） ──────────────────────────────────
-  if (h.length >= 5) {
-    const t8 = h.slice(-8);
-    const m2A = t8.filter(x => x === optA).length;
-    const m2B = t8.length - m2A;
-    const ratio = t8.length > 0 ? m2A / t8.length : 0.5;
-    if (ratio >= 0.70) scoreB += 2;      // optA 强势 → 回归押 optB
-    else if (ratio <= 0.30) scoreA += 2; // optB 强势 → 回归押 optA
-    else if (m2A > m2B) scoreA += 1;
-    else if (m2B > m2A) scoreB += 1;
-  }
-
-  // ── M3 交替密度（近6期，权重2） ──────────────────────────────────
-  if (h.length >= 4) {
-    const t6 = h.slice(-6);
-    let altCnt = 0;
-    for (let i = 1; i < t6.length; i++) if (t6[i] !== t6[i - 1]) altCnt++;
-    const altRate = t6.length > 1 ? altCnt / (t6.length - 1) : 0.5;
-    const latest = h[h.length - 1]!;
-    const latestOpp = latest === optA ? optB : optA;
-    if (altRate >= 0.70) {
-      // 高频震荡市：押反最新（ABABAB → 下期可能继续交替）
-      if (latestOpp === optA) scoreA += 2; else scoreB += 2;
-    } else if (altRate <= 0.25) {
-      // 低频龙市：押跟最新
-      if (latest === optA) scoreA += 2; else scoreB += 2;
-    }
-    // 中间区间：M3不加分，由M1/M2决定
-  }
-
-  if (scoreA === scoreB) {
-    // 平局：取近5期少数方向（统计弱势更可能回归）
-    const t5 = h.slice(-5);
-    const a5 = t5.filter(x => x === optA).length;
-    return a5 < Math.ceil(t5.length / 2) ? optA : optB;
-  }
-
-  return scoreA > scoreB ? optA : optB;
-}
-
-function hashSmartPlus(session: TgSession, labels: string[]): string | null {
-  const candidates: Array<{ algo: AlgorithmId; pick: string | null }> = [
-    { algo: "hash_follow", pick: hashDragon(session, labels) },
-    { algo: "hash_reverse", pick: hashBalance(session, labels) },
-    { algo: "hash_smart", pick: hashWave(session, labels) },
-  ];
-
-  const picks = candidates
-    .map((c) => ({ algo: c.algo, pick: c.pick && labels.includes(c.pick) ? c.pick : null }))
-    .filter((x): x is { algo: AlgorithmId; pick: string } => x.pick !== null);
-
-  if (picks.length === 0) return labels[Math.floor(Math.random() * labels.length)] ?? null;
-  if (picks.length === 1) return picks[0]!.pick;
-
-  const best = picks
-    .map(({ algo, pick }) => {
-      const s = session.algoStats[algo];
-      const total = (s?.wins ?? 0) + (s?.losses ?? 0);
-      const rate = total > 0 ? (s!.wins / total) : 0.5;
-      return { algo, pick, total, rate };
-    })
-    .sort((a, b) => {
-      if (a.total < 6 && b.total >= 6) return 1;
-      if (a.total >= 6 && b.total < 6) return -1;
-      if (a.rate !== b.rate) return b.rate - a.rate;
-      return b.total - a.total;
-    })[0]!;
-
-  const vote: Record<string, number> = {};
-  for (const p of picks) vote[p.pick] = (vote[p.pick] ?? 0) + 1;
-  const voted = Object.entries(vote).sort((a, b) => b[1] - a[1]);
-  const top = voted[0]?.[0];
-  const topCount = voted[0]?.[1] ?? 0;
-  const secondCount = voted[1]?.[1] ?? 0;
-
-  if (top && topCount > secondCount) return top;
-  return best.pick;
-}
+// ─── Kuaisan & Hash algorithm stubs removed ──────────────────────────────────
 
 function runAlgo(session: TgSession, algoId: AlgorithmId, labels: string[], signalText = ""): string | null {
-  if (algoId === "hash_follow")  return hashDragon(session, labels);
-  if (algoId === "hash_reverse") return hashBalance(session, labels);
-  if (algoId === "hash_smart")   return hashWave(session, labels);
-  if (algoId === "hash_smart_plus") return hashSmartPlus(session, labels);
-  if (algoId === "ks_follow")        return ksFollow(session, labels);
-  if (algoId === "ks_reverse")       return ksReverse(session, labels);
-  if (algoId === "ks_bb")            return ksBB(session, labels);
-  if (algoId === "ks_smart")         return ksSmart(session, labels);
   if (algoId === "adaptive_switch") return decideSteady(session); // 大小阶段用升级版AI决策
   if (algoId === "random") return labels[Math.floor(Math.random() * labels.length)] ?? null;
   if (algoId === "dragon_ride") return dragonRide(session);
@@ -4600,7 +4095,7 @@ function isPrivateMonitorCountdown30(text: string): boolean {
 }
 
 async function runPrivateMonitorAutoBet(session: TgSession, triggerTerm: number): Promise<void> {
-  if (!session.cfg.autoBet || !session.watchGroupId || session.cfg.gameMode !== "lottery") return;
+  if (!session.cfg.autoBet || !session.watchGroupId) return;
   if (!session.cfg.algorithms.includes("private_combo_ai")) return;
   if (session.privateAlgoLastBetTerm === triggerTerm) return;
 
@@ -4657,7 +4152,6 @@ async function broadcastPrivateMonitorAutoBet(triggerTerm: number): Promise<void
     !!session.me
     && session.cfg.autoBet
     && !!session.watchGroupId
-    && session.cfg.gameMode === "lottery"
     && session.cfg.algorithms.includes("private_combo_ai"),
   );
   await Promise.allSettled(targets.map(async session => {
@@ -4889,164 +4383,6 @@ function canadaSmartPlus(session: TgSession): KillGroupOption {
 
 // ─── 哈希28 杀组专用决策 ─────────────────────────────────────────────────────
 // 使用 session.hashResults（最新优先）进行七维评分，选出最冷组杀掉
-function hashDecideKillGroup(session: TgSession): KillGroupOption {
-  // 使用全局共享缓存（所有用户一致），回退到 session 级别
-  const hr = (hashHistoryCache.length > 0 ? hashHistoryCache : (session.hashResults ?? [])).slice(0, 30);
-  if (hr.length < 3) return KILL_GROUP_ALL[Math.floor(Math.random() * 4)]!;
-
-  const history = hr
-    .map(r => r.label)
-    .filter((l): l is KillGroupOption => (KILL_GROUP_ALL as readonly string[]).includes(l));
-  if (history.length < 3) return KILL_GROUP_ALL[Math.floor(Math.random() * 4)]!;
-
-  const n = history.length;
-  const scores: Record<KillGroupOption, number> = { "大单": 0, "大双": 0, "小单": 0, "小双": 0 };
-
-  // ── 遗漏计算（history[0]=最新） ──
-  const absence: Record<KillGroupOption, number> = { "大单": 0, "大双": 0, "小单": 0, "小双": 0 };
-  for (const opt of KILL_GROUP_ALL) {
-    let ab = 0;
-    for (let i = 0; i < n && history[i] !== opt; i++) ab++;
-    absence[opt] = ab;
-  }
-
-  // ── 当前连出组 ──
-  const latest = history[0]!;
-  let streak = 0;
-  for (let i = 0; i < n && history[i] === latest; i++) streak++;
-
-  // ── 维度 1：动量保护（最高优先级）──
-  // 正在连出的组有趋势，绝对不杀
-  scores[latest] -= (streak >= 2 ? 999 : 6.0);
-
-  // ── 维度 2：遗漏分 — 越冷门杀分越高 ──
-  const maxAb = Math.max(...Object.values(absence));
-  for (const opt of KILL_GROUP_ALL) {
-    const coldness = maxAb > 0 ? absence[opt] / maxAb : 0.25;
-    scores[opt] += coldness * 5.0;
-  }
-
-  // ── 维度 3：多时间窗口频率（5/10/20 期权重 4/2.5/1.2）──
-  for (const { size, w } of [{ size: 5, w: 4 }, { size: 10, w: 2.5 }, { size: 20, w: 1.2 }]) {
-    const slice = history.slice(0, Math.min(size, n));
-    for (const opt of KILL_GROUP_ALL) {
-      const freq = slice.filter(r => r === opt).length / slice.length;
-      scores[opt] += (0.25 - freq) * w * 4.0; // 低于均值 = 冷门 = 加杀分
-    }
-  }
-
-  // ── 维度 4：大/小、单/双维度偏向（保护当前强势维度）──
-  const recentN = Math.min(10, hr.length);
-  const bigCnt = hr.slice(0, recentN).filter(r => r.big).length;
-  const oddCnt = hr.slice(0, recentN).filter(r => r.odd).length;
-  const bigRatio = bigCnt / recentN;
-  const oddRatio = oddCnt / recentN;
-  if (bigRatio >= 0.65) {
-    scores["大单"] -= 2.0; scores["大双"] -= 2.0;
-    scores["小单"] += 2.0; scores["小双"] += 2.0;
-  } else if (bigRatio <= 0.35) {
-    scores["小单"] -= 2.0; scores["小双"] -= 2.0;
-    scores["大单"] += 2.0; scores["大双"] += 2.0;
-  }
-  if (oddRatio >= 0.65) {
-    scores["大单"] -= 2.0; scores["小单"] -= 2.0;
-    scores["大双"] += 2.0; scores["小双"] += 2.0;
-  } else if (oddRatio <= 0.35) {
-    scores["大双"] -= 2.0; scores["小双"] -= 2.0;
-    scores["大单"] += 2.0; scores["小单"] += 2.0;
-  }
-
-  // ── 维度 5：哈希值分布分析（基于实际 0-27 值）──
-  // 近期值聚集在极端区间时，对应大/小方向即将回归中心
-  if (hr.length >= 5) {
-    const avgVal = hr.slice(0, 5).map(r => r.value).reduce((a, b) => a + b, 0) / 5;
-    if (avgVal <= 5) {
-      // 近期值极低 → 大侧欠出 → 大侧不该被杀
-      scores["大单"] -= 1.5; scores["大双"] -= 1.5;
-    } else if (avgVal >= 22) {
-      scores["小单"] -= 1.5; scores["小双"] -= 1.5;
-    }
-  }
-
-  // ── 维度 6：极度欠出保护（即将补出，不可杀）──
-  for (const opt of KILL_GROUP_ALL) {
-    const ab = absence[opt];
-    if (ab >= 10)     scores[opt] -= 20;
-    else if (ab >= 8) scores[opt] -= 10;
-    else if (ab >= 6) scores[opt] -= 4;
-  }
-
-  // ── 维度 7：震荡形态检测（近 6 期交替≥75% → 刚出的组更不应再出）──
-  const tail6 = history.slice(0, Math.min(6, n));
-  if (tail6.length >= 4) {
-    let altCount = 0;
-    for (let i = 0; i < tail6.length - 1; i++) {
-      if (tail6[i] !== tail6[i + 1]) altCount++;
-    }
-    if (altCount / (tail6.length - 1) >= 0.75) {
-      for (const opt of KILL_GROUP_ALL) {
-        if (absence[opt] === 0 && scores[opt] > -900) scores[opt] += 2.0;
-        if (absence[opt] === 1 && scores[opt] > -900) scores[opt] += 0.8;
-      }
-    }
-  }
-
-  const killed = (Object.entries(scores) as [KillGroupOption, number][])
-    .sort((a, b) => b[1] - a[1])[0]![0];
-
-  logger.info({
-    killed, latest, streak, absence,
-    scores: Object.fromEntries(Object.entries(scores).map(([k, v]) => [k, Math.round((v as number) * 10) / 10])),
-  }, "[hash-kill] 杀组决策");
-
-  return killed;
-}
-
-/**
- * 哈希28 杀组下注：发送三注（除被杀组外的大单/大双/小单/小双），合并一条消息。
- */
-async function placeHashKillGroupBets(session: TgSession, killedGroup: KillGroupOption): Promise<void> {
-  if (!session.watchGroupId) return;
-  const targetId = session.watchGroupId;
-  const amount = session.currentBet;
-  const groupTitle = session.groups.find(g => g.id === targetId || `-100${g.id}` === targetId)?.title ?? targetId;
-
-  const toBet = KILL_GROUP_ALL.filter(o => o !== killedGroup);
-  const message = toBet.map(opt => `${opt} ${amount}`).join("  ");
-
-  const now = Date.now();
-  session.betPlacedThisCycle = true;
-  session.chasePlacedThisCycle = true;
-
-  let succeeded = false;
-  let failReason: string | undefined;
-  try {
-    await session.client.sendMessage(targetId, { message });
-    session.lastBetAt = now;
-    succeeded = true;
-  } catch (err) {
-    failReason = extractTgError(err);
-    handleBetSendError(session, failReason);
-  }
-
-  const betRecord: BetRecord = {
-    id: `hash-kill-${now}-${Math.random().toString(36).slice(2, 6)}`,
-    groupId: targetId, groupTitle,
-    messageText: message,
-    betContent: toBet.join("+"),
-    amount,
-    timestamp: now,
-    status: succeeded ? "sent" : "failed",
-    algoId: "hash_kill",
-    ...(failReason ? { failReason } : {}),
-  };
-  session.betLog.unshift(betRecord);
-  if (session.betLog.length > 200) session.betLog.length = 200;
-  pushEvent(session, "bet:new", { bet: betRecord });
-  pushEvent(session, "bet:kill", { killed: killedGroup, algo: "hash_kill" });
-  logger.info({ killedGroup, toBet, amount }, "[hash-kill] 杀组下注发送");
-}
-
 /**
  * 发出三注：下注除被杀组以外的三个选项，共享一条消息。
  */
@@ -5143,14 +4479,12 @@ async function runAutoBet(session: TgSession): Promise<void> {
     return;
   }
 
-  if (session.cfg.gameMode === "lottery" && session.cfg.algorithms.includes("private_combo_ai")) {
+  if (session.cfg.algorithms.includes("private_combo_ai")) {
     logger.info("[private-combo-ai] waiting for private monitor 30s trigger");
     return;
   }
 
-  const abcDigitAlgo = session.cfg.gameMode === "lottery"
-    ? session.cfg.algorithms.find(algo => algo === "abc_digit_cycle_ai" || algo === "abc_digit_ai")
-    : undefined;
+  const abcDigitAlgo = session.cfg.algorithms.find(algo => algo === "abc_digit_cycle_ai" || algo === "abc_digit_ai");
 
   if (abcDigitAlgo) {
     if (!hasAbcDigitEnabled(session)) {
@@ -5458,8 +4792,6 @@ function stopPoller(session: TgSession): void {
 
 function startGroupListener(session: TgSession): void {
   if (!session.watchGroupId) return;
-  if (session.cfg.gameMode === "kuaisan") { startKuaisanListener(session); return; }
-  if (session.cfg.gameMode === "hash") { startHashListener(session); return; }
   if (session.messageHandler && session.messageHandlerBuilder) {
     try { session.client.removeEventHandler(session.messageHandler, session.messageHandlerBuilder); } catch { /* ok */ }
     session.messageHandler = null; session.messageHandlerBuilder = null;
@@ -5541,742 +4873,9 @@ function startGroupListener(session: TgSession): void {
   session.client.addEventHandler(session.messageHandler, session.messageHandlerBuilder);
 }
 
-// ─── Kuaisan (快三) functions ─────────────────────────────────────────────────
+// ─── Kuaisan functions removed ────────────────────────────────────────────────
 
-function computeKuaisanResult(dice: [number, number, number]): KuaisanResult {
-  const [d1, d2, d3] = dice;
-  const sum = d1 + d2 + d3;
-  const leopard = d1 === d2 && d2 === d3;
-  const big = sum >= 11;
-  const odd = sum % 2 === 1;
-  const dragon = !leopard && d1 > d3;
-  const tiger = !leopard && d1 < d3;
-  let label: string;
-  if (leopard) {
-    label = "豹子";
-  } else {
-    label = `${big ? "大" : "小"}${odd ? "单" : "双"}${dragon ? "龙" : tiger ? "虎" : "和"}`;
-  }
-  return { dice, sum, big, odd, leopard, dragon, tiger, label };
-}
-
-function isKuaisanTie(r: KuaisanResult): boolean {
-  return !r.leopard && !r.dragon && !r.tiger;
-}
-
-function normalizeKuaisanBetLabel(label: string): string {
-  return label.trim().replace(/合/g, "和");
-}
-
-function extractKuaisanResultFromText(text: string): KuaisanResult | null {
-  if (!text) return null;
-  const compact = text.replace(/\s+/g, " ").trim();
-  const focus = compact.match(/本期开奖([\s\S]{0,120}?)(?:历史开奖|上期开奖结果?|$)/)?.[1]?.trim() ?? compact;
-  const threeInOne = focus.match(/([1-6])[^\d]{0,12}([1-6])[^\d]{0,12}([1-6])/);
-  if (threeInOne) {
-    const dice = [Number(threeInOne[1]), Number(threeInOne[2]), Number(threeInOne[3])] as [number, number, number];
-    if (dice.every(value => value >= 1 && value <= 6)) return computeKuaisanResult(dice);
-  }
-  const labelMatch = focus.match(/(豹子|(大|小)(单|双)(龙|虎|和|合)?|[和合])/);
-  if (!labelMatch) return null;
-  const lbl = normalizeKuaisanBetLabel(labelMatch[0]!);
-  const big = lbl.includes("大");
-  const odd = lbl.includes("单");
-  const leopard = lbl === "豹子";
-  const dragon = lbl.includes("龙");
-  const tiger = lbl.includes("虎");
-  const synth: KuaisanResult = {
-    dice: [0, 0, 0],
-    sum: leopard ? 6 : big ? (odd ? 11 : 12) : (odd ? 9 : 8),
-    big: leopard ? false : big,
-    odd: leopard ? false : odd,
-    leopard,
-    dragon,
-    tiger,
-    label: leopard ? "豹子" : (dragon || tiger ? lbl : `${big ? "大" : "小"}${odd ? "单" : "双"}和`),
-  };
-  if (!leopard && !dragon && !tiger && (lbl === "和" || lbl === "合")) {
-    synth.label = "和";
-  } else if (!leopard && !dragon && !tiger) {
-    synth.label = `${big ? "大" : "小"}${odd ? "单" : "双"}和`;
-  }
-  return synth;
-}
-
-function evaluateKuaisanBet(betLabel: string, r: KuaisanResult): boolean {
-  betLabel = normalizeKuaisanBetLabel(betLabel);
-  if (r.leopard) {
-    if (betLabel === "豹子") return true;
-    if (/^指定豹(\d)$/.test(betLabel)) return r.dice[0] === parseInt(betLabel.slice(3));
-    // 豹子时大/小按点数正常结算
-    if (betLabel === "大") return r.big;
-    if (betLabel === "小") return !r.big;
-    return false;
-  }
-  switch (betLabel) {
-    case "大": return r.big;
-    case "小": return !r.big;
-    case "单": return r.odd;
-    case "双": return !r.odd;
-    case "龙": return r.dragon;
-    case "虎": return r.tiger;
-    case "和": return isKuaisanTie(r);
-    case "大单": return r.big && r.odd;
-    case "大双": return r.big && !r.odd;
-    case "小单": return !r.big && r.odd;
-    case "小双": return !r.big && !r.odd;
-    case "大龙": return r.big && r.dragon;
-    case "小虎": return !r.big && r.tiger;
-    case "豹子": return false;
-    default: {
-      const m = betLabel.match(/^总和(\d+)$/);
-      return m ? r.sum === parseInt(m[1]) : false;
-    }
-  }
-}
-
-function getKuaisanOdds(betLabel: string): number {
-  betLabel = normalizeKuaisanBetLabel(betLabel);
-  if (betLabel === "豹子") return 33;
-  if (/^指定豹\d$/.test(betLabel)) return 200;
-  if (betLabel === "和") return 6;
-  if (["大单", "小双"].includes(betLabel)) return 3.4;
-  if (["小单", "大双", "大龙", "小虎"].includes(betLabel)) return 4.4;
-  const m = betLabel.match(/^总和(\d+)$/);
-  if (m) {
-    const n = parseInt(m[1]);
-    const tbl: Record<number, number> = { 4:60, 5:30, 6:18, 7:12, 8:9, 9:8, 10:7, 11:7, 12:8, 13:9, 14:12, 15:18, 16:30, 17:60 };
-    return tbl[n] ?? 1.97;
-  }
-  return 1.97;
-}
-
-function settleKuaisanBets(session: TgSession, result: KuaisanResult): void {
-  const pending = session.betLog.filter(b => b.status === "sent");
-  // Push result to recentResults once (for algorithm history)
-  session.recentResults.push(result.label);
-  if (session.recentResults.length > 30) session.recentResults.shift();
-  for (const bet of pending) {
-    const won = evaluateKuaisanBet(bet.betContent, result);
-    const odds = getKuaisanOdds(bet.betContent);
-    const pnl = won ? Math.round(bet.amount * (odds - 1) * 100) / 100 : -bet.amount;
-    bet.lotteryResult = result.label;
-    // Pass no `result` string → settleBet won't double-push recentResults
-    settleBet(session, { won, pnl, betId: bet.id, period: 0 });
-  }
-}
-
-async function runKuaisanAutoBet(session: TgSession): Promise<void> {
-  if (!session.cfg.autoBet || !session.watchGroupId) {
-    logger.info({ autoBet: session.cfg.autoBet, watchGroupId: session.watchGroupId }, "[ks] autoBet skipped: not enabled or no group");
-    return;
-  }
-  if (session.betPlacedThisCycle) {
-    logger.info("[ks] autoBet skipped: already bet this cycle");
-    return;
-  }
-  const risk = checkRisk(session);
-  if (!risk.ok) {
-    logger.info({ reason: risk.reason }, "[ks] autoBet skipped: risk check failed");
-    return;
-  }
-
-  const optLabels = (session.cfg.kuaisanBetOptions ?? ["big", "small"]).map(o => KS_BET_LABELS[o] ?? o);
-  const labels = optLabels.length >= 2 ? optLabels : ["大", "小"];
-  // signal_follow/signal_reverse need a live signal text; they always return null for kuaisan.
-  // Fall back to ks_bb for those algos only.
-  const SIGNAL_ALGOS: AlgorithmId[] = ["signal_follow", "signal_reverse"];
-  const rawAlgoId = (session.cfg.algorithms[session.algIndex % Math.max(session.cfg.algorithms.length, 1)] ?? "abc_trend") as AlgorithmId;
-  const algoId: AlgorithmId = SIGNAL_ALGOS.includes(rawAlgoId) ? "ks_bb" : rawAlgoId;
-  // Override betOptions so all internal algo functions use kuaisan bet labels
-  const ksSession: TgSession = { ...session, cfg: { ...session.cfg, betOptions: (session.cfg.kuaisanBetOptions ?? ["big", "small"]) as BetOption[] } };
-  let direction = runAlgo(ksSession, algoId, labels);
-  if (!direction) {
-    // 算法返回 null 属于意外，用 ks_bb 兜底
-    direction = ksBB(ksSession, labels) ?? labels[Math.floor(Math.random() * labels.length)] ?? "大";
-    logger.warn({ algoId, labels }, "[ks] algorithm returned null, fell back to ks_bb");
-  }
-  logger.info({ algoId, direction, amount: session.currentBet }, "[ks] placing bet");
-  // Advance rotation index and record last algo used
-  session.algIndex++;
-  session.lastAlgoUsed = algoId;
-
-  session.betPlacedThisCycle = true;
-  const amount = session.currentBet;
-  const targetId = session.watchGroupId;
-  const groupTitle = session.groups.find(g => g.id === targetId || `-100${g.id}` === targetId)?.title ?? targetId;
-  const msgText = `${direction} ${amount}`;
-
-  let succeeded = false;
-  let failReason: string | undefined;
-  try {
-    await session.client.sendMessage(targetId, { message: msgText });
-    session.lastBetAt = Date.now();
-    succeeded = true;
-  } catch (err) {
-    failReason = extractTgError(err);
-    handleBetSendError(session, failReason);
-  }
-
-  const betRecord: BetRecord = {
-    id: `ks-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-    groupId: targetId, groupTitle,
-    messageText: msgText,
-    betContent: direction,
-    amount,
-    timestamp: Date.now(),
-    status: succeeded ? "sent" : "failed",
-    algoId,
-    ...(failReason ? { failReason } : {}),
-  };
-  session.betLog.unshift(betRecord);
-  if (session.betLog.length > 200) session.betLog.length = 200;
-  pushEvent(session, "bet:new", { bet: betRecord });
-}
-
-function stopKuaisanListener(session: TgSession): void {
-  // Stop polling timer
-  if (session.kuaisanPollTimer) {
-    clearInterval(session.kuaisanPollTimer);
-    session.kuaisanPollTimer = undefined;
-  }
-  // Also clean up any legacy event handler
-  if (session.kuaisanHandler && session.kuaisanHandlerBuilder) {
-    try { session.client.removeEventHandler(session.kuaisanHandler as Parameters<typeof session.client.removeEventHandler>[0], session.kuaisanHandlerBuilder); } catch { /* ok */ }
-  }
-  session.kuaisanHandler = null;
-  session.kuaisanHandlerBuilder = null;
-}
-
-/** Process a single text message from the kuaisan group */
-async function processKuaisanMessage(session: TgSession, text: string, msgId: number): Promise<boolean> {
-  if (!text) return false;
-
-  // Log to chatLog for frontend debugging
-  const logEntry = { text: text.slice(0, 200), ts: Date.now(), chatId: session.watchGroupId ?? "" };
-  if (!session.chatLog) session.chatLog = [];
-  session.chatLog.unshift(logEntry as unknown as typeof session.chatLog[number]);
-  if (session.chatLog.length > 50) session.chatLog.pop();
-
-  // Helper: publish a computed kuaisan result + settle pending bets
-  const publishResult = (result: KuaisanResult) => {
-    if (!session.kuaisanResults) session.kuaisanResults = [];
-    session.kuaisanResults.unshift(result);
-    if (session.kuaisanResults.length > 50) session.kuaisanResults.pop();
-    saveSession(session); // 持久化历史，重启后 ks_dragon 等算法立即可用
-    pushEvent(session, "kuaisan:result", {
-      dice: result.dice, sum: result.sum, label: result.label,
-      big: result.big, odd: result.odd, dragon: result.dragon, tiger: result.tiger, leopard: result.leopard,
-    });
-    logger.info({ dice: Array.from(result.dice), label: result.label }, "[ks] result → settling bets");
-    settleKuaisanBets(session, result);
-    session.kuaisanPhase = "closed";
-    session.betPlacedThisCycle = false;
-    session.chasePlacedThisCycle = false;
-  };
-
-  // ── 0. Detect "开始下注" FIRST so it can't be misidentified as a result ──────
-  const isBetOpen =
-    text.includes("开始下注") ||
-    text.includes("开始投注") ||
-    text.includes("现在开始") ||
-    (text.includes("期号") && (text.includes("封盘") || text.includes("下注") || text.includes("开奖")));
-
-  if (isBetOpen && session.kuaisanPhase !== "betting") {
-    const periodMatch = text.match(/期[号码][：:\s]*([a-fA-F0-9\d]{6,})/);
-    session.kuaisanPhase = "betting";
-    session.kuaisanPeriod = periodMatch?.[1] ?? null;
-    if (!session.diceBuffer) session.diceBuffer = [];
-    session.diceBuffer = [];
-    session.betPlacedThisCycle = false;
-    pushEvent(session, "kuaisan:phase", { phase: "betting", period: session.kuaisanPeriod });
-    logger.info({ msgId, period: session.kuaisanPeriod }, "[ks] bet open detected via poll");
-    if (session.cfg.autoBet) await runKuaisanAutoBet(session);
-    return true;
-  }
-
-  // ── 1. Closing phase ────────────────────────────────────────────────────────
-  if (/停止下注|停止投注|已封盘|封盘/.test(text) && session.kuaisanPhase === "betting") {
-    session.kuaisanPhase = "closed";
-    pushEvent(session, "kuaisan:phase", { phase: "closed" });
-    return true;
-  }
-
-  // ── 2a. Dice buffer: one value per message ("骰子有效，识别点数为: X") ────────
-  const diceMatch = text.match(/骰子有效[，,]?\s*识别点数为[：:]\s*([1-6])/);
-  if (diceMatch) {
-    const value = parseInt(diceMatch[1]!);
-    const now = Date.now();
-    if (!session.diceBuffer) session.diceBuffer = [];
-    session.diceBuffer = session.diceBuffer.filter(d => now - d.time < 90_000);
-    session.diceBuffer.push({ value, time: now });
-    pushEvent(session, "kuaisan:dice", { buffer: session.diceBuffer.map(d => d.value) });
-    if (session.diceBuffer.length >= 3) {
-      const three = session.diceBuffer.slice(-3);
-      session.diceBuffer = [];
-      publishResult(computeKuaisanResult(three.map(d => d.value) as [number, number, number]));
-    }
-    return true;
-  }
-
-  // ── 2b. Single-message 3-dice result (e.g. "开奖：2-4-5 大单虎") ────────────
-  // Only trigger on explicit result-announcement keywords (not betting-round keywords)
-  const isResultAnnouncement = /开奖|结果|本期[：:是]|上期[：:是]|点数[：:是]/.test(text);
-  if (isResultAnnouncement) {
-    const parsed = extractKuaisanResultFromText(text);
-    if (parsed) {
-      session.diceBuffer = [];
-      logger.info({ msgId, dice: Array.from(parsed.dice), label: parsed.label, text: text.slice(0, 80) }, "[ks] result parsed from text");
-      publishResult(parsed);
-      return true;
-    }
-  }
-  return false;
-}
-
-// ─── Hash (哈希) functions ────────────────────────────────────────────────────
-
-function computeHashResult(value: number, digits?: [number, number, number] | null): HashResult {
-  const big = value >= 14;
-  const odd = value % 2 === 1;
-  let label: string;
-  if (big && odd) label = "大单";
-  else if (big && !odd) label = "大双";
-  else if (!big && odd) label = "小单";
-  else label = "小双";
-  return digits ? { value, big, odd, label, digits } : { value, big, odd, label };
-}
-
-function evaluateHashBet(betLabel: string, r: HashResult): boolean {
-  // 杀组合并格式 "大双+大单+小双"：任意一项命中即赢
-  if (betLabel.includes("+")) {
-    return betLabel.split("+").some(part => evaluateHashBet(part.trim(), r));
-  }
-  const abcMatch = betLabel.match(/^([ABC])(\d)$/);
-  if (abcMatch && r.digits) {
-    const posIndex = abcMatch[1] === "A" ? 0 : abcMatch[1] === "B" ? 1 : 2;
-    return r.digits[posIndex] === Number(abcMatch[2]);
-  }
-  switch (betLabel) {
-    case "大": return r.big;
-    case "小": return !r.big;
-    case "单": return r.odd;
-    case "双": return !r.odd;
-    case "大单": return r.big && r.odd;
-    case "大双": return r.big && !r.odd;
-    case "小单": return !r.big && r.odd;
-    case "小双": return !r.big && !r.odd;
-    default: return false;
-  }
-}
-
-function settleHashBets(session: TgSession, result: HashResult): void {
-  const pending = session.betLog.filter(b => b.status === "sent");
-  session.recentResults.push(result.label);
-  if (session.recentResults.length > 30) session.recentResults.shift();
-  for (const bet of pending) {
-    const odds = session.cfg.odds ?? 1.98;
-    bet.lotteryResult = `${result.value} ${result.label}`;
-
-    if (bet.isChase) {
-      // 追号注：按号码匹配开奖数字
-      const targetNum = parseInt(bet.betContent, 10);
-      const won = !isNaN(targetNum) && targetNum === result.value;
-      const pnl = won ? Math.round(bet.amount * (odds - 1) * 100) / 100 : -bet.amount;
-      settleBet(session, { won, pnl, betId: bet.id, period: 0, isChase: true });
-    } else {
-      const abcParts = bet.betContent
-        .split("+")
-        .map(s => s.trim())
-        .filter(part => /^([ABC])(\d)$/.test(part));
-      if (abcParts.length > 0 && result.digits) {
-        let hitCount = 0;
-        for (const part of abcParts) {
-          const abcMatch = part.match(/^([ABC])(\d)$/);
-          if (!abcMatch) continue;
-          const posIndex = abcMatch[1] === "A" ? 0 : abcMatch[1] === "B" ? 1 : 2;
-          if (result.digits[posIndex] === Number(abcMatch[2])) hitCount++;
-        }
-        const won = hitCount > 0;
-        const pnl = won
-          ? Math.round(bet.amount * (session.cfg.abcDigitOdds * hitCount - abcParts.length) * 100) / 100
-          : -bet.amount * abcParts.length;
-        settleBet(session, { won, pnl, betId: bet.id, period: 0 });
-        continue;
-      }
-      const won = evaluateHashBet(bet.betContent, result);
-      const pnl = won ? Math.round(bet.amount * (odds - 1) * 100) / 100 : -bet.amount;
-      settleBet(session, { won, pnl, betId: bet.id, period: 0 });
-    }
-  }
-  settleChaseLevelProgress(session, pending.filter(b => b.isChase), result.value, { sum: result.value });
-}
-
-async function runHashAutoBet(session: TgSession): Promise<void> {
-  if (!session.cfg.autoBet || !session.watchGroupId) return;
-  if (session.betPlacedThisCycle) return;
-  // 仅追号模式：只发追号注，不发主注
-  if (session.cfg.chaseOnly) {
-    if (session.cfg.enableChase && !session.chasePlacedThisCycle) {
-      await placeChaseOnly(session);
-    }
-    return;
-  }
-  const risk = checkRisk(session);
-  if (!risk.ok) return;
-
-  const cfgAlgos = (session.cfg.algorithms ?? []) as AlgorithmId[];
-  const hashAlgos = cfgAlgos.filter(a => a.startsWith("hash_"));
-  const hashAbcDigitAlgo = hashAlgos.find(algo => algo === "hash_abc_digit_cycle_ai" || algo === "hash_abc_digit_ai");
-
-  if (hashAbcDigitAlgo) {
-    if (!hasAbcDigitEnabled(session)) {
-      logger.warn("[hash-abc-digit-ai] all positions disabled, skip");
-      return;
-    }
-    const plan = hashAbcDigitAlgo === "hash_abc_digit_cycle_ai"
-      ? buildHashAbcDigitCyclePlan(session)
-      : buildHashAbcDigitPlan(session);
-    if (!plan) {
-      logger.warn("[hash-abc-digit-ai] insufficient digit history, skip");
-      return;
-    }
-    session.lastAlgoUsed = hashAbcDigitAlgo;
-    session.lastRawAlgoDir = summarizeAbcDigitPlan(plan);
-    await placeAbcDigitBets(session, plan);
-    return;
-  }
-
-  const primary =
-    (hashAlgos.includes("hash_kill_plus") ? "hash_kill_plus"
-      : (hashAlgos.includes("hash_kill") ? "hash_kill"
-        : (hashAlgos[0] ?? "hash_kill_plus"))) as AlgorithmId;
-  const fallback = (hashAlgos.find(a => a !== primary) ?? primary) as AlgorithmId;
-
-  let algoId: AlgorithmId = primary;
-  if (fallback !== primary) {
-    const last = session.betLog.find(b =>
-      !b.isChase &&
-      b.won !== undefined &&
-      (b.algoId === primary || b.algoId === fallback)
-    );
-    if (last?.algoId === primary && last.won === false) algoId = fallback;
-  }
-
-  session.lastAlgoUsed = algoId;
-
-  // ── 算法4 杀组专用：选出最冷组，押其余三组 ─────────────────────────────────
-  if (algoId === "hash_kill") {
-    const recentCache = (hashHistoryCache.length > 0 ? hashHistoryCache : (session.hashResults ?? []));
-
-    // ── 散点循环检测：近3期全不同 → 跳过本期，等形态聚集 ──
-    const recent3 = recentCache.slice(0, 3).map(r => r.label);
-    const isScatterLoop = recent3.length === 3 && new Set(recent3).size === 3;
-
-    if (isScatterLoop) {
-      session.betPlacedThisCycle = true;
-      const reason = `散点循环 ${recent3.join("→")}，等待形态聚集`;
-      const skipRec: BetRecord = {
-        id: `hash-kill-skip-${Date.now()}`,
-        groupId: session.watchGroupId ?? "",
-        groupTitle: "（跳过本期）",
-        messageText: reason, betContent: `散点·${recent3.join("→")}`, amount: 0,
-        timestamp: Date.now(), status: "skipped", algoId,
-      };
-      session.betLog.unshift(skipRec);
-      if (session.betLog.length > 200) session.betLog.length = 200;
-      pushEvent(session, "bet:alert", { message: `⚠️ ${reason}`, level: "warn" });
-      logger.info({ recent3 }, `[hash-kill] ${reason}`);
-      return;
-    }
-
-    const killed = hashDecideKillGroup(session);
-    pushEvent(session, "bet:kill", { killed, algo: "hash_kill" });
-    await placeHashKillGroupBets(session, killed);
-    return;
-  }
-
-  // ── 算法5 杀组升级版：无暂停保护，每期必下 ──────────────────────────────────
-  if (algoId === "hash_kill_plus") {
-    const killed = hashDecideKillGroup(session);
-    pushEvent(session, "bet:kill", { killed, algo: "hash_kill_plus" });
-    await placeHashKillGroupBets(session, killed);
-    return;
-  }
-
-  const opts = (session.cfg.hashBetOptions ?? ["big", "small"]).map(o => HASH_BET_LABELS[o] ?? o);
-  const labels = opts.length >= 2 ? opts : ["大", "小"];
-  const hashSession: TgSession = { ...session, cfg: { ...session.cfg, betOptions: (session.cfg.hashBetOptions ?? ["big", "small"]) as BetOption[] } };
-  let direction = runAlgo(hashSession, algoId, labels);
-  if (!direction) {
-    direction = labels[Math.floor(Math.random() * labels.length)] ?? "大";
-  }
-  session.betPlacedThisCycle = true;
-
-  const amount = session.currentBet;
-  const targetId = session.watchGroupId;
-  const groupTitle = session.groups.find(g => g.id === targetId || `-100${g.id}` === targetId)?.title ?? targetId;
-  const msgText = `${direction} ${amount}`;
-
-  let succeeded = false;
-  let failReason: string | undefined;
-  try {
-    await session.client.sendMessage(targetId, { message: msgText });
-    session.lastBetAt = Date.now();
-    succeeded = true;
-  } catch (err) {
-    failReason = extractTgError(err);
-    handleBetSendError(session, failReason);
-  }
-
-  const betRecord: BetRecord = {
-    id: `hash-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-    groupId: targetId, groupTitle,
-    messageText: msgText,
-    betContent: direction,
-    amount,
-    timestamp: Date.now(),
-    status: succeeded ? "sent" : "failed",
-    algoId,
-    ...(failReason ? { failReason } : {}),
-  };
-  session.betLog.unshift(betRecord);
-  if (session.betLog.length > 200) session.betLog.length = 200;
-  pushEvent(session, "bet:new", { bet: betRecord });
-  logger.info({ algoId, direction, amount }, "[hash] bet placed");
-}
-
-// ── 发布哈希开奖结果（供下注群和开奖频道共用）──
-function publishHashResult(session: TgSession, result: HashResult): void {
-  // ── 全局缓存：所有用户共享同一份开奖历史 ──
-  hashHistoryCache.unshift(result);
-  if (hashHistoryCache.length > 100) hashHistoryCache.pop();
-
-  // ── 会话级缓存：供 API 状态接口序列化展示 ──
-  if (!session.hashResults) session.hashResults = [];
-  session.hashResults.unshift(result);
-  if (session.hashResults.length > 50) session.hashResults.pop();
-  saveSession(session);
-  pushEvent(session, "hash:result", { value: result.value, label: result.label, big: result.big, odd: result.odd });
-  logger.info({ value: result.value, label: result.label }, "[hash] result → settling bets");
-  settleHashBets(session, result);
-  session.hashPhase = "closed";
-  session.betPlacedThisCycle = false;
-  session.chasePlacedThisCycle = false;
-}
-
-// ── 解析开奖频道消息：驱动相位 + 发布结果（完全由 hx28kjw 频道控制）──
-// 消息格式（来自 哈希加拿大28开奖网）：
-//   开始通知（文本）: "第 1051350 期开始\n开奖时间: 2026-06-01 21:20:58\nETH区块高度: ...\nTRON区块高度: ..."
-//   开奖结果（图片 caption）: "1051349期 9+8+5=22 大双 杂六"
-// 清除哈希延迟下注定时器（供多处调用）
-function clearHashBetDelayTimer(session: TgSession) {
-  if (session.hashBetDelayTimer) {
-    clearTimeout(session.hashBetDelayTimer);
-    session.hashBetDelayTimer = undefined;
-  }
-}
-
-// 开奖结果发布后，延迟 50 秒触发下注
-function scheduleHashAutoBet(session: TgSession) {
-  clearHashBetDelayTimer(session);
-  if (!session.cfg.autoBet) return;
-  logger.info("[hash-result] 开奖结果已收到，50 秒后自动下注");
-  session.hashBetDelayTimer = setTimeout(() => {
-    session.hashBetDelayTimer = undefined;
-    session.betPlacedThisCycle = false;
-    session.chasePlacedThisCycle = false;
-    if (session.cfg.autoBet) {
-      logger.info("[hash-result] 50 秒延迟到期 → 触发自动下注");
-      void runHashAutoBet(session);
-    }
-  }, 50_000);
-}
-
-async function processHashResultMsg(session: TgSession, text: string): Promise<void> {
-  if (!text) return;
-
-  // ── 1. 新期开始通知 → 仅更新相位显示，不触发下注（下注由开奖结果延迟 50s 驱动）──
-  // 格式: "第 1051350 期开始" 或 "第1051350期开始"
-  const openMatch = text.match(/第\s*(\d{4,})\s*期\s*开始/);
-  if (openMatch) {
-    const period = openMatch[1]!;
-    if (session.hashPeriod === period && session.hashPhase === "betting") return;
-    session.hashPeriod = period;
-    session.hashPhase = "betting";
-    pushEvent(session, "hash:phase", { phase: "betting", period });
-    logger.info({ period }, "[hash-result] 新期开始通知（仅更新相位）");
-    return;
-  }
-
-  // ── 2. 开奖结果 caption → 解析数值，发布结果，并启动 50 秒延迟下注 ──
-  // 主格式: "1051349期 9+8+5=22 大双 杂六"
-  const captionMatch = text.match(/(\d{4,})期\s*([0-9])\+([0-9])\+([0-9])=(\d{1,2})\s*(大单|大双|小单|小双)/);
-  if (captionMatch) {
-    const digits = [Number(captionMatch[2]), Number(captionMatch[3]), Number(captionMatch[4])] as [number, number, number];
-    const val = parseInt(captionMatch[5]!);
-    if (val >= 0 && val <= 27) {
-      publishHashResult(session, computeHashResult(val, digits));
-      scheduleHashAutoBet(session);
-      return;
-    }
-  }
-
-  // 备用：只有 A+B+C=D 公式（无期号或无标签时）
-  const digits = extractHashDigitsFromText(text);
-  if (digits) {
-    const val = digits[0] + digits[1] + digits[2];
-    if (val >= 0 && val <= 27) {
-      publishHashResult(session, computeHashResult(val, digits));
-      scheduleHashAutoBet(session);
-      return;
-    }
-  }
-
-  // 末级备用：「数字 大/小单/双」在一行内
-  const labelMatch = text.match(/(?<![:/\d])(\d{1,2})\s*(大单|大双|小单|小双)/);
-  if (labelMatch) {
-    const val = parseInt(labelMatch[1]!);
-    if (val >= 0 && val <= 27) {
-      publishHashResult(session, computeHashResult(val));
-      scheduleHashAutoBet(session);
-      return;
-    }
-  }
-}
-
-// ── 下注群消息：只负责相位检测（开盘 / 封盘），结果由开奖频道轮询器处理 ──
-async function processHashMessage(session: TgSession, text: string, _msgId: number): Promise<void> {
-  if (!text) return;
-
-  // 记录到群消息日志
-  const logEntry = { text: text.slice(0, 200), ts: Date.now(), chatId: session.watchGroupId ?? "" };
-  if (!session.chatLog) session.chatLog = [];
-  session.chatLog.unshift(logEntry as unknown as typeof session.chatLog[number]);
-  if (session.chatLog.length > 50) session.chatLog.pop();
-
-  // ── 开始下注 ──
-  // 哈希PC28 发的是图片消息，caption 含「封盘时间」+「期号/赔率」
-  const isBetOpen =
-    text.includes("开始下注") ||
-    text.includes("开始投注") ||
-    text.includes("现在开始") ||
-    (text.includes("封盘时间") && (text.includes("期号") || text.includes("赔率")));
-
-  // ── 开始下注（仅更新相位显示，不触发下注——下注由开奖频道驱动）──
-  if (isBetOpen && session.hashPhase !== "betting") {
-    const periodMatch = text.match(/期[号码][：:\s]*([a-fA-F0-9\d]{4,})/);
-    const closeTimeMatch = text.match(/封盘时间[：:\s]*(\d{1,2}:\d{2}:\d{2})/);
-    // 只有在开奖频道尚未设置期号时才从群里补充（避免覆盖频道已设的正确期号）
-    if (!session.hashPeriod) {
-      session.hashPeriod = periodMatch?.[1] ?? null;
-    }
-    session.hashPhase = "betting";
-    pushEvent(session, "hash:phase", { phase: "betting", period: session.hashPeriod });
-    logger.info({ period: session.hashPeriod, closeTime: closeTimeMatch?.[1] }, "[hash] group: bet open (phase only, no auto-bet)");
-    // 注意：不在这里调用 runHashAutoBet，防止与开奖频道触发重复下注
-    return;
-  }
-
-  // ── 封盘 ──（「封盘时间」是开盘通知字段，不触发封盘）
-  const isClosing = !text.includes("封盘时间") && /停止下注|停止投注|已封盘|封盘/.test(text);
-  if (isClosing && session.hashPhase === "betting") {
-    session.hashPhase = "closed";
-    pushEvent(session, "hash:phase", { phase: "closed" });
-  }
-}
-
-// ─── Hash result channel poller (t.me/hx28kjw) ───────────────────────────────
-
-const HX28_RESULT_CHANNEL = "hx28kjw";
-
-function stopHashResultPoller(session: TgSession): void {
-  if (session.hashResultPollTimer) {
-    clearInterval(session.hashResultPollTimer);
-    session.hashResultPollTimer = undefined;
-  }
-  clearHashBetDelayTimer(session);
-}
-
-function startHashResultPoller(session: TgSession): void {
-  stopHashResultPoller(session);
-
-  void (async () => {
-    // 用字符串 username 直接传给 getMessages，GramJS 内部会自动解析
-    const chanTarget = HX28_RESULT_CHANNEL as Parameters<typeof session.client.getMessages>[0];
-
-    // 取最近10条消息：解析出历史结果预填 session.hashResults，供散点检测使用
-    try {
-      const recent = await session.client.getMessages(chanTarget, { limit: 10 }) as Api.Message[];
-      if (recent.length > 0) {
-        session.hashResultLastMsgId = recent[0]!.id; // 最新的作为基准 ID
-        // 按旧→新顺序解析，收集有效结果
-        const sorted = [...recent].sort((a, b) => a.id - b.id);
-        const seededResults: HashResult[] = [];
-        for (const msg of sorted) {
-          const text = msg.message ?? "";
-          const captionMatch = text.match(/(\d{4,})期\s*([0-9])\+([0-9])\+([0-9])=(\d{1,2})\s*(大单|大双|小单|小双)/);
-          const seededDigits = captionMatch
-            ? [Number(captionMatch[2]), Number(captionMatch[3]), Number(captionMatch[4])] as [number, number, number]
-            : extractHashDigitsFromText(text);
-          const raw = captionMatch ? captionMatch[5]! : (seededDigits ? String(seededDigits[0] + seededDigits[1] + seededDigits[2]) : "");
-          const val = raw !== "" ? parseInt(raw) : -1;
-          if (val >= 0 && val <= 27) seededResults.push(computeHashResult(val, seededDigits));
-        }
-        // 最新在前写入 session.hashResults（散点检测 fallback）
-        session.hashResults = seededResults.reverse();
-        // 若全局缓存为空，也用种子数据预填（全局缓存不重复添加已有项）
-        if (hashHistoryCache.length === 0) {
-          hashHistoryCache = [...session.hashResults];
-        }
-        logger.info(
-          { channel: HX28_RESULT_CHANNEL, baselineMsgId: session.hashResultLastMsgId, seeded: seededResults.length },
-          "[hash-result] 开奖频道轮询已启动，已预填历史缓存",
-        );
-      }
-    } catch (err) {
-      logger.warn({ err, channel: HX28_RESULT_CHANNEL }, "[hash-result] 无法读取开奖频道，30s 后重试");
-      setTimeout(() => {
-        if (tgSessions.get(session.userId) === session && session.cfg.gameMode === "hash") {
-          startHashResultPoller(session);
-        }
-      }, 30_000);
-      return;
-    }
-
-    if (tgSessions.get(session.userId) !== session) return;
-
-    session.hashResultPollTimer = setInterval(() => {
-      if (tgSessions.get(session.userId) !== session) {
-        clearInterval(session.hashResultPollTimer); session.hashResultPollTimer = undefined; return;
-      }
-      void (async () => {
-        try {
-          const msgs = await session.client.getMessages(chanTarget, {
-            limit: 10,
-            ...(session.hashResultLastMsgId > 0 ? { minId: session.hashResultLastMsgId } : {}),
-          }) as Api.Message[];
-          if (!msgs.length) return;
-          const sorted = [...msgs].sort((a, b) => a.id - b.id);
-          for (const msg of sorted) {
-            if (msg.id <= session.hashResultLastMsgId) continue;
-            session.hashResultLastMsgId = msg.id;
-            const text = msg.message ?? "";
-            await processHashResultMsg(session, text);
-          }
-        } catch { /* network hiccup */ }
-      })();
-    }, 3000);
-  })();
-}
-
-function stopHashListener(session: TgSession): void {
-  if (session.hashPollTimer) {
-    clearInterval(session.hashPollTimer);
-    session.hashPollTimer = undefined;
-  }
-  stopHashResultPoller(session);
-}
+// ─── Hash functions removed ────────────────────────────────────────────────────
 
 // ─── 加拿大监控 Poller（admin 面板，多群独立轮询）────────────────────────────
 function stopCanadaMonitorPoller(session: TgSession, groupId?: string): void {
@@ -6737,117 +5336,7 @@ function startPrivateMonitorPoller(session: TgSession, groupId: string): void {
   })();
 }
 
-function startHashListener(session: TgSession): void {
-  if (!session.watchGroupId) return;
-  stopHashListener(session);
-  // Remove any existing lottery handler
-  if (session.messageHandler && session.messageHandlerBuilder) {
-    try { session.client.removeEventHandler(session.messageHandler as Parameters<typeof session.client.removeEventHandler>[0], session.messageHandlerBuilder); } catch { /* ok */ }
-    session.messageHandler = null; session.messageHandlerBuilder = null;
-  }
-  const targetId = session.watchGroupId;
-
-  // 清空历史缓存，避免旧脏数据显示在面板
-  clearHashBetDelayTimer(session);
-  session.hashResults = [];
-  session.hashPhase = "idle";
-  session.hashPeriod = null;
-
-  // 同时启动开奖频道轮询器（hx28kjw → 获取实际开奖结果）
-  startHashResultPoller(session);
-
-  // 先拿到最新消息 ID 再开始轮询，避免启动时把历史消息全部误处理
-  void (async () => {
-    try {
-      const baseline = await session.client.getMessages(targetId, { limit: 1 }) as Api.Message[];
-      if (baseline.length > 0) {
-        session.hashLastMsgId = baseline[0]!.id;
-        logger.info({ targetId, baselineMsgId: session.hashLastMsgId }, "[hash] poller started");
-      }
-    } catch { /* ignore, poller will start with minId=0 and skip gracefully */ }
-
-    if (tgSessions.get(session.userId) !== session) return; // session already replaced
-
-    session.hashPollTimer = setInterval(() => {
-    if (tgSessions.get(session.userId) !== session) {
-      clearInterval(session.hashPollTimer); session.hashPollTimer = undefined; return;
-    }
-    void (async () => {
-      try {
-        const msgs = await session.client.getMessages(targetId, {
-          limit: 20,
-          ...(session.hashLastMsgId > 0 ? { minId: session.hashLastMsgId } : {}),
-        }) as Api.Message[];
-        if (!msgs.length) return;
-        const sorted = [...msgs].sort((a, b) => a.id - b.id);
-        // Auto-expire stale bets
-        const now = Date.now();
-        for (const stale of session.betLog.filter(b => b.status === "sent" && now - b.timestamp > 120_000)) {
-          logger.warn({ betId: stale.id }, "[hash] stale bet auto-expired");
-          settleBet(session, { won: false, pnl: -stale.amount, betId: stale.id });
-        }
-        for (const msg of sorted) {
-          if (msg.id <= session.hashLastMsgId) continue;
-          session.hashLastMsgId = msg.id;
-          const text = msg.message ?? "";
-          await processHashMessage(session, text, msg.id);
-        }
-      } catch { /* network hiccup */ }
-    })();
-  }, 2000);
-  })(); // end async baseline IIFE
-}
-
-function startKuaisanListener(session: TgSession): void {
-  if (!session.watchGroupId) return;
-  stopKuaisanListener(session);
-  // Remove any existing lottery handler
-  if (session.messageHandler && session.messageHandlerBuilder) {
-    try { session.client.removeEventHandler(session.messageHandler as Parameters<typeof session.client.removeEventHandler>[0], session.messageHandlerBuilder); } catch { /* ok */ }
-    session.messageHandler = null; session.messageHandlerBuilder = null;
-  }
-  const targetId = session.watchGroupId;
-
-  // Initialise the baseline message ID (use current latest, don't re-process history)
-  void session.client.getMessages(targetId, { limit: 1 }).then((msgs: Api.Message[]) => {
-    if (msgs.length > 0) {
-      session.kuaisanLastMsgId = msgs[0].id;
-      logger.info({ targetId, baselineMsgId: session.kuaisanLastMsgId }, "[ks] poller started");
-    }
-  }).catch(() => { /* ignore */ });
-
-  // Poll every 2 seconds for new messages
-  session.kuaisanPollTimer = setInterval(() => {
-    if (tgSessions.get(session.userId) !== session) {
-      clearInterval(session.kuaisanPollTimer); session.kuaisanPollTimer = undefined; return;
-    }
-    void (async () => {
-      try {
-        const msgs = await session.client.getMessages(targetId, {
-          limit: 20,
-          ...(session.kuaisanLastMsgId > 0 ? { minId: session.kuaisanLastMsgId } : {}),
-        }) as Api.Message[];
-        if (!msgs.length) return;
-        // getMessages returns newest-first; reverse to process oldest-first
-        const sorted = [...msgs].sort((a, b) => a.id - b.id);
-        // Auto-expire bets stuck in "sent" for > 120s — call settleBet so
-        // computeNextBet runs and currentBet is updated for martingale strategy.
-        const now = Date.now();
-        for (const stale of session.betLog.filter(b => b.status === "sent" && now - b.timestamp > 120_000)) {
-          logger.warn({ betId: stale.id, age: Math.round((now - stale.timestamp) / 1000) }, "[ks] stale bet auto-expired as lost");
-          settleBet(session, { won: false, pnl: -stale.amount, betId: stale.id });
-        }
-
-        for (const msg of sorted) {
-          if (msg.id <= session.kuaisanLastMsgId) continue;
-          session.kuaisanLastMsgId = msg.id;
-          const text = msg.message ?? "";
-          await processKuaisanMessage(session, text, msg.id);
-        }
-      } catch { /* network hiccup — retry next cycle */ }
-    })();
-  }, 2000);
-}
+// ─── startHashListener & startKuaisanListener removed ────────────────────────
 
 // ─── KKPay listener ───────────────────────────────────────────────────────────
 
@@ -7048,9 +5537,6 @@ router.post("/tg/send-code", requireCard, async (req, res) => {
       kkpayUsername: existing?.kkpayUsername ?? "kkpay", kkpayEntityId: undefined,
       balanceSource: existing?.balanceSource ?? "manual", balanceUpdatedAt: 0,
       adaptiveSwitchKillMode: false,
-      diceBuffer: [], kuaisanPhase: "idle", kuaisanPeriod: null, kuaisanResults: [],
-      kuaisanHandler: null, kuaisanHandlerBuilder: null, kuaisanLastMsgId: 0,
-      hashPhase: "idle", hashPeriod: null, hashResults: [], hashLastMsgId: 0, hashResultLastMsgId: 0,
       canadaMonitorGroupIds: existing?.canadaMonitorGroupIds ?? [], canadaMonitorPollers: {}, canadaSharedPoller: undefined, canadaMonitorLastMsgIds: {}, canadaMonitorInFlight: {}, canadaPollCursor: 0,
       privateMonitorGroupIds: (existing as unknown as { privateMonitorGroupIds?: string[] } | undefined)?.privateMonitorGroupIds ?? [], privateMonitorPollers: {}, privateSharedPoller: undefined, privateMonitorLastMsgIds: {}, privateMonitorInFlight: {}, privatePollCursor: 0,
       privateCountdown30Term: null, privateAlgoLastBetTerm: null,
@@ -7168,17 +5654,6 @@ router.get("/tg/status", requireCard, (req, res) => {
     algIndex: session.algIndex,
     currentPattern: session.currentPattern,
     adaptiveSwitchKillMode: session.adaptiveSwitchKillMode,
-    gameMode: session.cfg.gameMode,
-    kuaisanBetOptions: session.cfg.kuaisanBetOptions,
-    kuaisanPhase: session.kuaisanPhase,
-    kuaisanPeriod: session.kuaisanPeriod,
-    kuaisanLastDice: session.diceBuffer?.map(d => d.value),
-    kuaisanResults: session.kuaisanResults?.slice(0, 20),
-    kuaisanChatLog: (session.chatLog ?? []).slice(0, 20),
-    hashBetOptions: session.cfg.hashBetOptions,
-    hashPhase: session.hashPhase,
-    hashPeriod: session.hashPeriod,
-    hashResults: (session.hashResults ?? []).slice(0, 20),
     ...stats,
   });
 });
@@ -7274,9 +5749,6 @@ router.post("/tg/config", requireCard, (req, res) => {
     chaseAmountLevels: (body as Partial<BetCfg>).chaseAmountLevels ?? prev.chaseAmountLevels,
     dualGroupMode: body.dualGroupMode ?? prev.dualGroupMode,
     killGroupMode: body.killGroupMode ?? prev.killGroupMode,
-    gameMode: (body.gameMode as BetCfg["gameMode"]) ?? prev.gameMode,
-    kuaisanBetOptions: body.kuaisanBetOptions ?? prev.kuaisanBetOptions,
-    hashBetOptions: (body as Partial<BetCfg>).hashBetOptions ?? prev.hashBetOptions,
     algoFlipOnLoss: body.algoFlipOnLoss ?? prev.algoFlipOnLoss,
     abcAEnabled: normalizeAbcEnabled(body.abcAEnabled, prev.abcAEnabled),
     abcBEnabled: normalizeAbcEnabled(body.abcBEnabled, prev.abcBEnabled),
@@ -7303,25 +5775,6 @@ router.post("/tg/config", requireCard, (req, res) => {
   }
   if (body.algorithms !== undefined) session.algIndex = 0;
 
-  const gameModeChanged = body.gameMode !== undefined && body.gameMode !== prev.gameMode;
-
-  // Restart listeners only when the game mode actually changes.
-  if (session.watchGroupId && gameModeChanged) {
-    if (session.cfg.gameMode === "kuaisan") {
-      stopPoller(session);
-      stopHashListener(session);
-      startKuaisanListener(session);
-    } else if (session.cfg.gameMode === "hash") {
-      stopPoller(session);
-      stopKuaisanListener(session);
-      startHashListener(session);
-    } else {
-      stopKuaisanListener(session);
-      stopHashListener(session);
-      startGroupListener(session);
-    }
-  }
-
   if (body.autoBet === false && prev.autoBet) stopPoller(session);
   if (body.autoBet === true && !prev.autoBet && session.watchGroupId) {
     // Reset level to 1 every time autoBet is re-enabled
@@ -7335,12 +5788,9 @@ router.post("/tg/config", requireCard, (req, res) => {
     session.algoFlipCooldown = 0;
     session.lastRawAlgoDir = null;
     session.betPlacedThisCycle = false;
-    // For lottery/hash mode only: start poller
-    if (session.cfg.gameMode !== "kuaisan" && session.cfg.gameMode !== "hash") {
-      session.lastSeenLotteryPeriod = 0;
-      startPoller(session);
-      void pollLottery(session);
-    }
+    session.lastSeenLotteryPeriod = 0;
+    startPoller(session);
+    void pollLottery(session);
   }
   saveSession(session);
   res.json({ ok: true, cfg: session.cfg });
@@ -7997,8 +6447,6 @@ export function stopUserAutoBet(userId: number): void {
   if (session.cfg.autoBet) {
     session.cfg.autoBet = false;
     stopPoller(session);
-    // 停快三自动投注轮询
-    if (session.kuaisanPollTimer) { clearInterval(session.kuaisanPollTimer); session.kuaisanPollTimer = undefined; }
     if (session.autoNextBetTimer) { clearTimeout(session.autoNextBetTimer); session.autoNextBetTimer = undefined; }
     // 保存会话（autoBet=false 持久化）
     saveSession(session);
