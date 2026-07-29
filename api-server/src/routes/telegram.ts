@@ -6369,13 +6369,37 @@ async function pollOneCanadaGroup(session: TgSession, groupId: string): Promise<
           numEntries.sort((a, b) => a.amt - b.amt);
           emptyNums.push(...numEntries.slice(0, 5).map(e => e.n));
         }
-        // 下注最少的方向（取5个）
+        // 下注最少的方向（取5个）并计算算法推荐
         const allDirs = ["大","小","单","双","大单","大双","小单","小双"];
         const sorted = allDirs.map(d => ({ dir: d, amt: dirAmts[d] ?? 0 })).sort((a, b) => a.amt - b.amt);
         const leastDirs = sorted.slice(0, 5).map(s => `${s.dir}(${s.amt > 0 ? s.amt.toLocaleString("zh-CN", { maximumFractionDigits: 2 }) : "0"}U)`);
+        // 算法推荐：比较大小组 vs 单双组，投入更小组中最小方向
+        const big = (dirAmts["大"] ?? 0) + (dirAmts["大单"] ?? 0) + (dirAmts["大双"] ?? 0);
+        const small = (dirAmts["小"] ?? 0) + (dirAmts["小单"] ?? 0) + (dirAmts["小双"] ?? 0);
+        const odd = (dirAmts["单"] ?? 0) + (dirAmts["大单"] ?? 0) + (dirAmts["小单"] ?? 0);
+        const even = (dirAmts["双"] ?? 0) + (dirAmts["大双"] ?? 0) + (dirAmts["小双"] ?? 0);
+        const sizeTotal = big + small; // 大小组总额
+        const parityTotal = odd + even; // 单双组总额
+        let suggest = "";
+        if (sizeTotal <= parityTotal) {
+          // 大小组总额更少 → 从大小里选最小
+          const sizeDirs = [
+            { dir: "大", amt: dirAmts["大"] ?? 0 },
+            { dir: "小", amt: dirAmts["小"] ?? 0 },
+          ].sort((a, b) => a.amt - b.amt);
+          suggest = sizeDirs[0]!.dir;
+        } else {
+          // 单双组总额更少 → 从单双里选最小
+          const parityDirs = [
+            { dir: "单", amt: dirAmts["单"] ?? 0 },
+            { dir: "双", amt: dirAmts["双"] ?? 0 },
+          ].sort((a, b) => a.amt - b.amt);
+          suggest = parityDirs[0]!.dir;
+        }
         pushAdminEvent("closing:recommend", {
           emptyNums,
           leastDirs,
+          suggest,
           term: canadaCurrentBetTerm,
         });
         continue;

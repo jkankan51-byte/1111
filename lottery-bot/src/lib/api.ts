@@ -436,6 +436,8 @@ export interface GroupBetEntry {
   raw: string;
   period: string | null;
   termContext: number | null;
+  groupId?: string;
+  groupTitle?: string;
 }
 
 export interface LotteryData {
