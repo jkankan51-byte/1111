@@ -3345,86 +3345,98 @@ function parseBetLabel(text: string): string | null {
 
 function runAlgo(session: TgSession, algoId: AlgorithmId, labels: string[], signalText = ""): string | null {
   if (algoId === "algo_dim") {
-    // 维度智选：分析当前走势，选择打大小还是单双
+    // 维度智选：只从用户选择的 labels 中分析走势决策
     const history = buildHistory(session);
     const recent = history.slice(-8);
-    // 统计大小、单双各自的热度
-    let big = 0, small = 0, odd = 0, even = 0;
-    for (const r of recent) {
-      if (r === "大" || r.startsWith("大")) big++;
-      else if (r === "小" || r.startsWith("小")) small++;
-      if (r.endsWith("单")) odd++;
-      else if (r.endsWith("双")) even++;
+    const hasSize = labels.some(l => l === "大" || l === "小");
+    const hasParity = labels.some(l => l === "单" || l === "双");
+    if (hasSize && hasParity) {
+      // 大小和单双都选了 → 选信号更清晰的维度
+      let big = 0, small = 0, odd = 0, even = 0;
+      for (const r of recent) {
+        if (r === "大" || r.startsWith("大")) big++;
+        else if (r === "小" || r.startsWith("小")) small++;
+        if (r.endsWith("单")) odd++;
+        else if (r.endsWith("双")) even++;
+      }
+      const sizeAlt = Math.abs(big - small);
+      const parityAlt = Math.abs(odd - even);
+      if (sizeAlt >= parityAlt) {
+        // 大小维度信号更清晰
+        return labels.includes(big <= small ? "大" : "小") ? (big <= small ? "大" : "小") : labels[0]!;
+      } else {
+        return labels.includes(odd <= even ? "单" : "双") ? (odd <= even ? "单" : "双") : labels[0]!;
+      }
+    } else if (hasSize) {
+      // 只选了大小 → 只打大小
+      let big = 0, small = 0;
+      for (const r of recent) {
+        if (r === "大" || r.startsWith("大")) big++;
+        else if (r === "小" || r.startsWith("小")) small++;
+      }
+      return labels.includes(big <= small ? "大" : "小") ? (big <= small ? "大" : "小") : labels[0]!;
+    } else if (hasParity) {
+      // 只选了单双 → 只打单双
+      let odd = 0, even = 0;
+      for (const r of recent) {
+        if (r.endsWith("单")) odd++;
+        else if (r.endsWith("双")) even++;
+      }
+      return labels.includes(odd <= even ? "单" : "双") ? (odd <= even ? "单" : "双") : labels[0]!;
     }
-    // 交替率检测：哪个维度信号更强
-    const sizeAlt = Math.abs(big - small);    // 大小差异 → 越小越震荡
-    const parityAlt = Math.abs(odd - even);    // 单双差异 → 越小越震荡
-    // 信号清晰度越高（差异越大）越优先
-    if (sizeAlt >= parityAlt) {
-      // 大小维度信号更清晰 → 打大小，选冷的
-      return big <= small ? "大" : "小";
-    } else {
-      // 单双维度信号更清晰 → 打单双，选冷的
-      return odd <= even ? "单" : "双";
-    }
+    // 都不是（如双组模式标签）→ 从 labels 随机
+    return labels[Math.floor(Math.random() * labels.length)] ?? null;
   }
   if (algoId === "algo_dual_group") {
-    // 双组模式：根据历史走势从(大单+小双)和(小单+大双)中选一组
-    const groupA = ["大单", "小双"];
-    const groupB = ["小单", "大双"];
+    // 双组模式：根据历史走势从 labels 选一组
     const history = buildHistory(session);
     const recent = history.slice(-6);
-    // 分析组走势：看哪组最近更冷（出现少 = 补涨概率大）
-    let aHot = 0, bHot = 0;
-    for (const r of recent) {
-      if (groupA.includes(r)) aHot++;
-      else if (groupB.includes(r)) bHot++;
-      else if (r === "大") { aHot += 0.5; bHot += 0.5; }
-      else if (r === "小") { aHot += 0.5; bHot += 0.5; }
-      else if (r === "单") { aHot += 0.3; bHot += 0.7; }
-      else if (r === "双") { aHot += 0.7; bHot += 0.3; }
+    // 如果有 ABC_GROUP_A/B 在 labels 中，走双组逻辑
+    if (labels.includes(ABC_GROUP_A) || labels.includes(ABC_GROUP_B)) {
+      let aHot = 0, bHot = 0;
+      for (const r of recent) {
+        if (r === "大单" || r === "小双") aHot++;
+        else if (r === "小单" || r === "大双") bHot++;
+        else if (r === "大" || r === "小") { aHot += 0.5; bHot += 0.5; }
+        else if (r === "单") { aHot += 0.3; bHot += 0.7; }
+        else if (r === "双") { aHot += 0.7; bHot += 0.3; }
+      }
+      return aHot <= bHot ? ABC_GROUP_A : ABC_GROUP_B;
     }
-    // 冷热切换：出现多的组减分，出现少的组加分
-    const aScore = aHot <= bHot ? 1 : -1;
-    const pickA = aScore >= 0;
-    session.lastDualGroup = pickA ? "A" : "B";
-    return pickA ? "大单,小双" : "小单,大双";
+    // 否则从 labels 中按冷热选
+    const counts: Record<string, number> = {};
+    for (const l of labels) counts[l] = history.filter(r => r === l).length;
+    labels.sort((a, b) => (counts[a] ?? 0) - (counts[b] ?? 0));
+    return labels[0] ?? null;
   }
   if (algoId === "algo_7d") {
-    // 七维算法：综合分析7个维度决定最可能出的方向
-    // 1-4: 大小单双冷热度  5: 组合趋势  6: 长龙检测  7: 震荡检测
+    // 七维算法：从用户所选 labels 中按 7 维度评分选最优方向
     const history = buildHistory(session);
     const recent8 = history.slice(-8);
     const big = recent8.filter(r => r === "大" || r.startsWith("大")).length;
     const small = recent8.filter(r => r === "小" || r.startsWith("小")).length;
     const odd = recent8.filter(r => r.endsWith("单")).length;
     const even = recent8.filter(r => r.endsWith("双")).length;
-    // 得分：每种方向按7维加权
     const score: Record<string, number> = {};
-    const dirs = ["大", "小", "单", "双", "大单", "大双", "小单", "小双"];
+    const dirs = labels.length > 0 ? labels : ["大", "小", "单", "双", "大单", "大双", "小单", "小双"];
     for (const d of dirs) {
       let s = 0;
       const isBig = d === "大" || d.startsWith("大");
       const isSmall = d === "小" || d.startsWith("小");
       const isOdd = d.endsWith("单");
       const isEven = d.endsWith("双");
-      // 维度1-2: 冷热倾向（出现少的方向加分）
       if (isBig) s += (8 - big) * 1.5;
       if (isSmall) s += (8 - small) * 1.5;
       if (isOdd) s += (8 - odd) * 1.5;
       if (isEven) s += (8 - even) * 1.5;
-      // 维度3: 连续性惩罚（最近出现扣分）
       if (recent8.length > 0 && recent8[recent8.length - 1] === d) s -= 3;
-      // 维度4: 交替奖励
       if (recent8.length >= 2 && recent8[recent8.length - 2] !== d && recent8[recent8.length - 1] !== d) s += 2;
-      // 维度5: 历史胜率
       const total = history.filter(r => r === d).length;
       s -= total * 0.3;
-      // 维度6-7 通过longStreak/lastTrend隐式处理
       score[d] = s;
     }
-    const sorted = dirs.sort((a, b) => score[b] - score[a]);
-    return sorted[0] ?? "大";
+    const sorted = [...dirs].sort((a, b) => score[b] - score[a]);
+    return sorted[0] ?? dirs[0] ?? null;
   }
   return labels[Math.floor(Math.random() * labels.length)] ?? null;
 }

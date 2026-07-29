@@ -146,8 +146,8 @@
   --destructive-border: hsl(var(--destructive));
 }
 
-/* ── Theme variants ──────────────────────────────────────────── */
-.theme-pink {
+/* ── Theme variants (global via data-theme on <html>) ────────── */
+html[data-theme="pink"] {
   --primary: 330 100% 50%;
   --ring: 330 100% 50%;
   --chart-1: 330 100% 50%;
@@ -161,7 +161,7 @@
   --accent-hex: #ff0080;
   --accent-rgb: 255, 0, 128;
 }
-.theme-gold {
+html[data-theme="gold"] {
   --primary: 51 100% 50%;
   --ring: 51 100% 50%;
   --chart-1: 51 100% 50%;
@@ -175,7 +175,7 @@
   --accent-hex: #ffd700;
   --accent-rgb: 255, 215, 0;
 }
-.theme-green {
+html[data-theme="green"] {
   --primary: 162 100% 50%;
   --ring: 162 100% 50%;
   --chart-1: 162 100% 50%;
@@ -189,7 +189,7 @@
   --accent-hex: #00ff88;
   --accent-rgb: 0, 255, 136;
 }
-.theme-purple {
+html[data-theme="purple"] {
   --primary: 270 91% 65%;
   --ring: 270 91% 65%;
   --chart-1: 270 91% 65%;
@@ -204,19 +204,27 @@
   --accent-rgb: 168, 85, 247;
 }
 
-/* ── Theme-aware utility overrides ──────────────────────────── */
-.theme-pink :where(.text-blue-400, .text-cyan-400, .text-blue-300) { color: var(--accent-hex) !important; }
-.theme-pink :where(.bg-blue-500\/10, .bg-blue-500\/20) { background: rgba(var(--accent-rgb), 0.1) !important; }
-.theme-pink :where(.border-blue-500\/30) { border-color: rgba(var(--accent-rgb), 0.3) !important; }
-.theme-gold :where(.text-blue-400, .text-cyan-400, .text-blue-300) { color: var(--accent-hex) !important; }
-.theme-gold :where(.bg-blue-500\/10, .bg-blue-500\/20) { background: rgba(var(--accent-rgb), 0.1) !important; }
-.theme-gold :where(.border-blue-500\/30) { border-color: rgba(var(--accent-rgb), 0.3) !important; }
-.theme-green :where(.text-blue-400, .text-cyan-400, .text-blue-300) { color: var(--accent-hex) !important; }
-.theme-green :where(.bg-blue-500\/10, .bg-blue-500\/20) { background: rgba(var(--accent-rgb), 0.1) !important; }
-.theme-green :where(.border-blue-500\/30) { border-color: rgba(var(--accent-rgb), 0.3) !important; }
-.theme-purple :where(.text-blue-400, .text-cyan-400, .text-blue-300) { color: var(--accent-hex) !important; }
-.theme-purple :where(.bg-blue-500\/10, .bg-blue-500\/20) { background: rgba(var(--accent-rgb), 0.1) !important; }
-.theme-purple :where(.border-blue-500\/30) { border-color: rgba(var(--accent-rgb), 0.3) !important; }
+/* ── Global color overrides per theme (affects entire page) ── */
+html[data-theme="pink"] :where(.text-blue-400, .text-cyan-400, .text-blue-300, .text-cyan-300, .text-sky-400, .text-indigo-400) { color: #ff0080 !important; }
+html[data-theme="pink"] :where(.bg-blue-500\/10, .bg-blue-500\/20, .bg-cyan-500\/10, .bg-sky-500\/10) { background: rgba(255, 0, 128, 0.1) !important; }
+html[data-theme="pink"] :where(.border-blue-500\/30, .border-cyan-500\/30, .border-blue-500\/20) { border-color: rgba(255, 0, 128, 0.3) !important; }
+html[data-theme="pink"] :where(.bg-blue-50, .bg-blue-100, .bg-blue-500) { background: #ff0080 !important; }
+html[data-theme="pink"] :where(.hover\:text-blue-400:hover) { color: #ff0080 !important; }
+html[data-theme="gold"] :where(.text-blue-400, .text-cyan-400, .text-blue-300, .text-cyan-300, .text-sky-400, .text-indigo-400) { color: #ffd700 !important; }
+html[data-theme="gold"] :where(.bg-blue-500\/10, .bg-blue-500\/20, .bg-cyan-500\/10, .bg-sky-500\/10) { background: rgba(255, 215, 0, 0.1) !important; }
+html[data-theme="gold"] :where(.border-blue-500\/30, .border-cyan-500\/30, .border-blue-500\/20) { border-color: rgba(255, 215, 0, 0.3) !important; }
+html[data-theme="gold"] :where(.bg-blue-50, .bg-blue-100, .bg-blue-500) { background: #ffd700 !important; }
+html[data-theme="gold"] :where(.hover\:text-blue-400:hover) { color: #ffd700 !important; }
+html[data-theme="green"] :where(.text-blue-400, .text-cyan-400, .text-blue-300, .text-cyan-300, .text-sky-400, .text-indigo-400) { color: #00ff88 !important; }
+html[data-theme="green"] :where(.bg-blue-500\/10, .bg-blue-500\/20, .bg-cyan-500\/10, .bg-sky-500\/10) { background: rgba(0, 255, 136, 0.1) !important; }
+html[data-theme="green"] :where(.border-blue-500\/30, .border-cyan-500\/30, .border-blue-500\/20) { border-color: rgba(0, 255, 136, 0.3) !important; }
+html[data-theme="green"] :where(.bg-blue-50, .bg-blue-100, .bg-blue-500) { background: #00ff88 !important; }
+html[data-theme="green"] :where(.hover\:text-blue-400:hover) { color: #00ff88 !important; }
+html[data-theme="purple"] :where(.text-blue-400, .text-cyan-400, .text-blue-300, .text-cyan-300, .text-sky-400, .text-indigo-400) { color: #a855f7 !important; }
+html[data-theme="purple"] :where(.bg-blue-500\/10, .bg-blue-500\/20, .bg-cyan-500\/10, .bg-sky-500\/10) { background: rgba(168, 85, 247, 0.1) !important; }
+html[data-theme="purple"] :where(.border-blue-500\/30, .border-cyan-500\/30, .border-blue-500\/20) { border-color: rgba(168, 85, 247, 0.3) !important; }
+html[data-theme="purple"] :where(.bg-blue-50, .bg-blue-100, .bg-blue-500) { background: #a855f7 !important; }
+html[data-theme="purple"] :where(.hover\:text-blue-400:hover) { color: #a855f7 !important; }
 
 .dark {
   --button-outline: rgba(0, 255, 255, 0.15);

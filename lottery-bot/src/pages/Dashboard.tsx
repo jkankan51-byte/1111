@@ -807,6 +807,7 @@ export default function Dashboard() {
   const [clearLoading, setClearLoading] = useState(false);
   const [sseAlert, setSseAlert] = useState<string | null>(null);
   const [themeColor, setThemeColor] = useState(() => { try { return localStorage.getItem("themeColor") || "cyan"; } catch { return "cyan"; } });
+  useEffect(() => { document.documentElement.setAttribute("data-theme", themeColor); }, [themeColor]);
   const [showThemePicker, setShowThemePicker] = useState(false);
   const nextCloseRef = useRef<number>(0);
   const sseRef = useRef<EventSource | null>(null);
@@ -1059,7 +1060,7 @@ export default function Dashboard() {
   // ─── Render ──────────────────────────────────────────────────────────────
 
   return (
-    <div className={`min-h-screen bg-[#0b0e1a] text-white theme-${themeColor}`}>
+    <div className="min-h-screen bg-[#0b0e1a] text-white">
       {/* SSE Alert Banner */}
       {sseAlert && (
         <div className="sticky top-0 z-50 bg-red-900/90 border-b border-red-700 px-4 py-3 flex items-start gap-3 backdrop-blur">
