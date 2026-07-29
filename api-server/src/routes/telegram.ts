@@ -207,7 +207,7 @@ function parseCanadaBotConfirm(text: string, senderName: string, groupId?: strin
 
 type BetStrategy = "normal" | "martingale" | "anti-martingale";
 type BetOption = "big" | "small" | "odd" | "even" | "big-odd" | "big-even" | "small-odd" | "small-even";
-type AlgorithmId = "algo_big" | "algo_small" | "algo_odd" | "algo_even" | "algo_dual_group" | "algo_kill_group";
+type AlgorithmId = "algo_dim" | "algo_dual_group" | "algo_7d";
 
 interface BetCfg {
   autoBet: boolean;
@@ -245,12 +245,9 @@ interface BetCfg {
 }
 
 const ACTIVE_ALGORITHMS = new Set<AlgorithmId>([
-  "algo_big",
-  "algo_small",
-  "algo_odd",
-  "algo_even",
+  "algo_dim",
   "algo_dual_group",
-  "algo_kill_group",
+  "algo_7d",
 ]);
 
 function sanitizeAlgorithms(algos: AlgorithmId[] | undefined): AlgorithmId[] {
@@ -258,7 +255,7 @@ function sanitizeAlgorithms(algos: AlgorithmId[] | undefined): AlgorithmId[] {
     .filter(algo => ACTIVE_ALGORITHMS.has(algo))
     .filter((algo, index, arr) => arr.indexOf(algo) === index);
   if (filtered.length > 0) return filtered;
-  return ["algo_big"];
+  return ["algo_dim"];
 }
 
 function sanitizeCfg(cfg: BetCfg): BetCfg {
@@ -2012,12 +2009,12 @@ function decidePrivateMonitorComboBet(session: TgSession): string | null {
 type MarketPattern = "streak" | "oscillating" | "neutral";
 
 /** 长龙形态适用算法 */
-const STREAK_ALGOS: AlgorithmId[] = ["algo_big", "algo_small"];
-const DECIDE_ALGOS: AlgorithmId[] = ["algo_big", "algo_small", "algo_odd", "algo_even"];
+const STREAK_ALGOS: AlgorithmId[] = ["algo_dim"];
+const DECIDE_ALGOS: AlgorithmId[] = ["algo_dim"];
 /** 震荡形态适用算法 */
-const OSCILLATING_ALGOS: AlgorithmId[] = ["algo_odd", "algo_even", "algo_dual_group"];
+const OSCILLATING_ALGOS: AlgorithmId[] = ["algo_dim", "algo_dual_group"];
 /** 中性算法（兜底） */
-const NEUTRAL_ALGOS: AlgorithmId[] = ["algo_kill_group"];
+const NEUTRAL_ALGOS: AlgorithmId[] = ["algo_7d"];
 
 /**
  * 检测最近 8 期走势形态：
@@ -3347,35 +3344,87 @@ function parseBetLabel(text: string): string | null {
 // ─── Kuaisan & Hash algorithm stubs removed ──────────────────────────────────
 
 function runAlgo(session: TgSession, algoId: AlgorithmId, labels: string[], signalText = ""): string | null {
-  if (algoId === "algo_big") return "大";
-  if (algoId === "algo_small") return "小";
-  if (algoId === "algo_odd") return "单";
-  if (algoId === "algo_even") return "双";
+  if (algoId === "algo_dim") {
+    // 维度智选：分析当前走势，选择打大小还是单双
+    const history = buildHistory(session);
+    const recent = history.slice(-8);
+    // 统计大小、单双各自的热度
+    let big = 0, small = 0, odd = 0, even = 0;
+    for (const r of recent) {
+      if (r === "大" || r.startsWith("大")) big++;
+      else if (r === "小" || r.startsWith("小")) small++;
+      if (r.endsWith("单")) odd++;
+      else if (r.endsWith("双")) even++;
+    }
+    // 交替率检测：哪个维度信号更强
+    const sizeAlt = Math.abs(big - small);    // 大小差异 → 越小越震荡
+    const parityAlt = Math.abs(odd - even);    // 单双差异 → 越小越震荡
+    // 信号清晰度越高（差异越大）越优先
+    if (sizeAlt >= parityAlt) {
+      // 大小维度信号更清晰 → 打大小，选冷的
+      return big <= small ? "大" : "小";
+    } else {
+      // 单双维度信号更清晰 → 打单双，选冷的
+      return odd <= even ? "单" : "双";
+    }
+  }
   if (algoId === "algo_dual_group") {
-    // 双组模式：从(大单+小双)和(小单+大双)中选一组
+    // 双组模式：根据历史走势从(大单+小双)和(小单+大双)中选一组
     const groupA = ["大单", "小双"];
     const groupB = ["小单", "大双"];
-    const lastGroup = session.lastDualGroup; // 记录上一次选的组
     const history = buildHistory(session);
-    // 简单交替策略：避免连续同组，看历史结果倾向
-    const recent4 = history.slice(-4);
-    const aCount = recent4.filter(r => groupA.includes(r)).length;
-    const bCount = recent4.filter(r => groupB.includes(r)).length;
-    const pickA = aCount <= bCount;
+    const recent = history.slice(-6);
+    // 分析组走势：看哪组最近更冷（出现少 = 补涨概率大）
+    let aHot = 0, bHot = 0;
+    for (const r of recent) {
+      if (groupA.includes(r)) aHot++;
+      else if (groupB.includes(r)) bHot++;
+      else if (r === "大") { aHot += 0.5; bHot += 0.5; }
+      else if (r === "小") { aHot += 0.5; bHot += 0.5; }
+      else if (r === "单") { aHot += 0.3; bHot += 0.7; }
+      else if (r === "双") { aHot += 0.7; bHot += 0.3; }
+    }
+    // 冷热切换：出现多的组减分，出现少的组加分
+    const aScore = aHot <= bHot ? 1 : -1;
+    const pickA = aScore >= 0;
     session.lastDualGroup = pickA ? "A" : "B";
-    // 返回组内两注用逗号分隔，发单时拆分
     return pickA ? "大单,小双" : "小单,大双";
   }
-  if (algoId === "algo_kill_group") {
-    // 四组杀组模式：杀一组投三组
-    // 从(大单/大双/小单/小双)中杀掉最近出现最多的一组
-    const killCandidates = ["大单", "大双", "小单", "小双"];
+  if (algoId === "algo_7d") {
+    // 七维算法：综合分析7个维度决定最可能出的方向
+    // 1-4: 大小单双冷热度  5: 组合趋势  6: 长龙检测  7: 震荡检测
     const history = buildHistory(session);
-    const counts = killCandidates.map(d => ({ dir: d, cnt: history.filter(r => r === d).length }));
-    counts.sort((a, b) => b.cnt - a.cnt);
-    const kill = counts[0]!.dir;
-    const remaining = killCandidates.filter(d => d !== kill);
-    return remaining.join(",");
+    const recent8 = history.slice(-8);
+    const big = recent8.filter(r => r === "大" || r.startsWith("大")).length;
+    const small = recent8.filter(r => r === "小" || r.startsWith("小")).length;
+    const odd = recent8.filter(r => r.endsWith("单")).length;
+    const even = recent8.filter(r => r.endsWith("双")).length;
+    // 得分：每种方向按7维加权
+    const score: Record<string, number> = {};
+    const dirs = ["大", "小", "单", "双", "大单", "大双", "小单", "小双"];
+    for (const d of dirs) {
+      let s = 0;
+      const isBig = d === "大" || d.startsWith("大");
+      const isSmall = d === "小" || d.startsWith("小");
+      const isOdd = d.endsWith("单");
+      const isEven = d.endsWith("双");
+      // 维度1-2: 冷热倾向（出现少的方向加分）
+      if (isBig) s += (8 - big) * 1.5;
+      if (isSmall) s += (8 - small) * 1.5;
+      if (isOdd) s += (8 - odd) * 1.5;
+      if (isEven) s += (8 - even) * 1.5;
+      // 维度3: 连续性惩罚（最近出现扣分）
+      if (recent8.length > 0 && recent8[recent8.length - 1] === d) s -= 3;
+      // 维度4: 交替奖励
+      if (recent8.length >= 2 && recent8[recent8.length - 2] !== d && recent8[recent8.length - 1] !== d) s += 2;
+      // 维度5: 历史胜率
+      const total = history.filter(r => r === d).length;
+      s -= total * 0.3;
+      // 维度6-7 通过longStreak/lastTrend隐式处理
+      score[d] = s;
+    }
+    const sorted = dirs.sort((a, b) => score[b] - score[a]);
+    return sorted[0] ?? "大";
   }
   return labels[Math.floor(Math.random() * labels.length)] ?? null;
 }

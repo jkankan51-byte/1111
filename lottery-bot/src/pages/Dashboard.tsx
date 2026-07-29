@@ -18,12 +18,9 @@ interface DrawState {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const ALGO_LABELS: Record<string, string> = {
-  algo_big:        "通用-大",
-  algo_small:      "通用-小",
-  algo_odd:        "通用-单",
-  algo_even:       "通用-双",
+  algo_dim:        "通用-维度智选",
   algo_dual_group: "通用-双组模式",
-  algo_kill_group: "通用-四组杀组模式",
+  algo_7d:         "通用-七维算法",
 };
 
 const REMOVED_CANADA_ALGOS = new Set<string>();
@@ -40,7 +37,7 @@ function normalizeAlgos(a: string[]) {
     .filter(x => AVAILABLE_ALGOS.has(x))
     .filter((x, index, arr) => arr.indexOf(x) === index);
   if (filtered.length > 0) return filtered;
-  return ["algo_big"];
+  return ["algo_dim"];
 }
 
 function normalizeChaseNumbers(entries: Array<{ num: string; amount: string }>, chaseDoubleOnLoss: boolean) {
@@ -1075,7 +1072,7 @@ export default function Dashboard() {
       <div className="sticky top-0 z-40 bg-[#0b0e1a]/95 border-b border-[#1e2235] backdrop-blur">
         <div className="max-w-lg mx-auto px-4 py-3 flex justify-between items-center">
           <div className="flex items-center gap-2">
-            <span className="text-xl">🎰</span>
+            <span className="text-xl">⚡</span>
             <span className="font-bold text-white">暴击-飞投</span>
             {card?.active && cardCountdown && (
               <span className={`text-[10px] border px-1.5 py-0.5 rounded font-mono tabular-nums ${
