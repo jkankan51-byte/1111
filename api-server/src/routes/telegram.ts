@@ -1094,18 +1094,26 @@ async function restoreUserSession(userId: number, file: string): Promise<void> {
   // 尝试连接 TG，失败时仍创建离线 session（不删文件）
   let me: Api.User | null = null;
   let connected = false;
-  try {
-    await client.connect();
-    me = (await client.getMe()) as Api.User;
-    if (me?.id) connected = true;
-  } catch (e) {
-    if (isFatalAuthError(e)) {
-      logger.warn({ userId }, "[tg] restore — fatal auth error, deleting session file");
-      try { fs.unlinkSync(file); } catch { /* ok */ }
-      try { await client.disconnect(); } catch { /* ok */ }
-      return;
+  // Retry connect up to 3 times with delay
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      await client.connect();
+      me = (await client.getMe()) as Api.User;
+      if (me?.id) { connected = true; break; }
+    } catch (e) {
+      if (isFatalAuthError(e)) {
+        logger.warn({ userId }, "[tg] restore — fatal auth error, deleting session file");
+        try { fs.unlinkSync(file); } catch { /* ok */ }
+        try { await client.disconnect(); } catch { /* ok */ }
+        return;
+      }
+      if (attempt < 3) {
+        logger.warn({ userId, attempt }, "[tg] restore connect failed, retrying...");
+        await new Promise(r => setTimeout(r, 3000 * attempt));
+      } else {
+        logger.warn({ userId }, "[tg] restore connect failed after 3 attempts — creating offline session");
+      }
     }
-    logger.warn({ userId }, "[tg] restore connect failed — creating offline session");
   }
 
   // 无法获取 me 时从持久化文件恢复基本信息
@@ -1252,6 +1260,37 @@ async function restoreAllSessions(): Promise<void> {
 
 // 先让 Web 服务起来，再后台分批恢复 TG 会话，避免刚启动就把首页请求拖住。
 setTimeout(() => { void restoreAllSessions(); }, 1500);
+
+// 部署退出前保存所有 session，防止 Render 掉线
+process.once("SIGTERM", () => {
+  logger.info("[tg] SIGTERM received — saving all sessions before exit");
+  for (const [userId, session] of tgSessions) {
+    try {
+      const sessionStr = session.stringSession.save();
+      const data: PersistedData = {
+        sessionString: sessionStr,
+        phone: session.phone,
+        balance: session.balance,
+        balanceKk: session.balanceKk,
+        balanceUsdt: session.balanceUsdt,
+        balanceCny: session.balanceCny,
+        todayPnl: session.todayPnl,
+        todayResetAt: session.todayResetAt,
+        sessionPnl: session.sessionPnl,
+        kkpayUsername: session.kkpayUsername,
+        balanceSource: session.balanceSource,
+        watchGroupId: session.watchGroupId,
+        canadaMonitorGroupIds: session.canadaMonitorGroupIds,
+        cfg: session.cfg,
+      };
+      fs.writeFileSync(sessionFile(userId), JSON.stringify(data, null, 2), "utf-8");
+      if (sessionStr) {
+        db.update(users).set({ tgSessionString: sessionStr }).where(eq(users.id, userId))
+          .catch(() => {});
+      }
+    } catch { /* best effort */ }
+  }
+});
 
 // ─── Periodic expiry enforcement ──────────────────────────────────────────────
 // Every 60s: disconnect TG sessions whose card has expired and delete the session file.
