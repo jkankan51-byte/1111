@@ -278,12 +278,16 @@ router.post("/shop/create-order", requireAuth, async (req, res) => {
     const price = priceMap[cardType]!;
     const orderId = randomUUID();
 
+    const timestamp = Date.now();
+    const nonce = Math.random().toString(36).slice(2, 10);
     const payload = JSON.stringify({
       userOrder: orderId,
       name: `${cfg.productName}-${typeLabel[cardType]}`,
       amount: price,
       coin: "USDT",
       notify_url: `${cfg.domain}/api/shop/notify`,
+      timestamp,
+      nonce,
     });
     const base64Data = Buffer.from(payload).toString("base64");
     const sign = kkpaySign(base64Data, cfg.kkpaySecret);
@@ -514,12 +518,16 @@ router.post("/shop/tg-webhook", async (req, res) => {
       const orderId = randomUUID();
       const price = priceMap[cardType]!;
 
+      const timestamp2 = Date.now();
+      const nonce2 = Math.random().toString(36).slice(2, 10);
       const payload = JSON.stringify({
         userOrder: orderId,
         name: `${cfg.productName}-${typeLabel[cardType]}`,
         amount: price,
         coin: "USDT",
         notify_url: `${cfg.domain}/api/shop/notify`,
+        timestamp: timestamp2,
+        nonce: nonce2,
       });
       const base64Data = Buffer.from(payload).toString("base64");
       const sign = kkpaySign(base64Data, cfg.kkpaySecret);
