@@ -10,11 +10,10 @@ const router = Router();
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-function kkpaySign(base64Data: string, secret: string, timestamp?: number, nonce?: string): string {
-  if (timestamp && nonce) {
-    return createHash("md5").update(base64Data + timestamp + nonce + secret).digest("hex").toLowerCase();
-  }
-  return createHash("md5").update(base64Data + secret).digest("hex").toLowerCase();
+function kkpaySign(base64Data: string, secret: string): string {
+  return Buffer.from(
+    createHash("sha256").update(base64Data + secret).digest()
+  ).toString("base64");
 }
 
 function extractKkpayPayUrl(rawText: string): { ok: true; payUrl: string } | { ok: false; error: string } {
@@ -291,7 +290,7 @@ router.post("/shop/create-order", requireAuth, async (req, res) => {
       nonce,
     });
     const base64Data = Buffer.from(payload).toString("base64");
-    const sign = kkpaySign(base64Data, cfg.kkpaySecret, timestamp, nonce);
+    const sign = kkpaySign(base64Data, cfg.kkpaySecret);
 
     let rawText = "";
     try {
@@ -537,7 +536,7 @@ router.post("/shop/tg-webhook", async (req, res) => {
         nonce: nonce2,
       });
       const base64Data = Buffer.from(payload).toString("base64");
-      const sign = kkpaySign(base64Data, cfg.kkpaySecret, timestamp2, nonce2);
+      const sign = kkpaySign(base64Data, cfg.kkpaySecret);
 
       let rawText = "";
       try {
