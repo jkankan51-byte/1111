@@ -11,9 +11,8 @@ const router = Router();
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 function kkpaySign(base64Data: string, secret: string, timestamp?: number, nonce?: string): string {
-  let data = base64Data + secret;
-  if (timestamp !== undefined && nonce) data = base64Data + timestamp + nonce + secret;
-  return createHash("sha256").update(data).digest("hex");
+  const data = timestamp && nonce ? base64Data + timestamp + nonce + secret : base64Data + secret;
+  return createHash("sha256").update(data).digest("hex").toLowerCase();
 }
 
 function extractKkpayPayUrl(rawText: string): { ok: true; payUrl: string } | { ok: false; error: string } {
@@ -541,16 +540,16 @@ router.post("/shop/tg-webhook", async (req, res) => {
       let rawText = "";
       try {
         const r = await fetch("https://api.kkpaywallet.com/merchant/payLink", {
-        method: "POST",
-        headers: {
-          "Content-Type": "text/plain",
-          "KKPAY-ID": cfg.kkpayId,
-          "KKPAY-SIGN": sign,
-          "KKPAY-TIMESTAMP": String(timestamp2),
-          "KKPAY-NONCE": nonce2,
-        },
-        body: base64Data,
-      });
+          method: "POST",
+          headers: {
+            "Content-Type": "text/plain",
+            "KKPAY-ID": cfg.kkpayId,
+            "KKPAY-SIGN": sign,
+            "KKPAY-TIMESTAMP": String(timestamp2),
+            "KKPAY-NONCE": nonce2,
+          },
+          body: base64Data,
+        });
         rawText = await r.text();
       } catch {
         await tgSend(token, chatId, "❌ 支付接口暂时不可用，请稍后重试。");
